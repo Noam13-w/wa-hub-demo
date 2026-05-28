@@ -32,6 +32,20 @@ export function getSocket() {
 }
 
 /**
+ * Cleanly close the socket without wiping auth. Used by graceful shutdown.
+ */
+export async function closeSocket() {
+  if (!sock) return;
+  try {
+    sock.ev.removeAllListeners();
+    sock.end(undefined);
+  } catch (err) {
+    log.warn({ err: err.message }, 'closeSocket: ignored error');
+  }
+  sock = null;
+}
+
+/**
  * Wipe the auth state and force a fresh QR pairing. Used by POST /api/instance/logout.
  */
 export async function resetAuth() {
@@ -107,11 +121,18 @@ async function handleConnectionUpdate(update) {
   if (connection === 'close') {
     const code = lastDisconnect?.error?.output?.statusCode;
     const loggedOut = code === DisconnectReason.loggedOut;
-    log.warn({ code, loggedOut, reason: lastDisconnect?.error?.message }, 'WhatsApp connection closed');
+    // 440 = connectionReplaced — another session took over this device.
+    // Reconnecting would just trigger a war between the two sessions; abort.
+    const replaced = code === DisconnectReason.connectionReplaced || code === 440;
+    log.warn({ code, loggedOut, replaced, reason: lastDisconnect?.error?.message }, 'WhatsApp connection closed');
     state.setConnection('disconnected', { reason: lastDisconnect?.error?.message });
 
     if (loggedOut) {
       log.error('Device was logged out from the phone. Clear /data/auth and re-pair.');
+      return;
+    }
+    if (replaced) {
+      log.error('Another session replaced this one (code 440). Not reconnecting — re-pair to take over.');
       return;
     }
 
@@ -121,6 +142,17 @@ async function handleConnectionUpdate(update) {
     setTimeout(() => startSocket().catch((err) => log.error({ err }, 'reconnect failed')), backoff);
   }
 }
+
+// Human-readable mapping for Baileys' numeric ack statuses.
+// See proto WAMessageStatus: 0=ERROR 1=PENDING 2=SERVER_ACK 3=DELIVERY_ACK 4=READ 5=PLAYED
+const STATUS_LABELS = {
+  0: 'error',
+  1: 'pending',
+  2: 'sent',       // ✓ — server received it
+  3: 'delivered', // ✓✓ — phone delivered it
+  4: 'read',       // ✓✓ blue — recipient opened it
+  5: 'played',     // voice note played
+};
 
 function handleMessagesUpsert({ messages, type }) {
   if (type !== 'notify' && type !== 'append') return;
@@ -137,11 +169,17 @@ function handleMessagesUpsert({ messages, type }) {
 
 function handleMessageStatusUpdate(updates) {
   for (const u of updates) {
-    if (!u.update?.status) continue;
+    const code = u.update?.status;
+    if (code === undefined || code === null) continue;
     state.emit('message.status', {
       id: u.key?.id,
       chat: u.key?.remoteJid,
-      status: u.update.status, // 0=ERROR 1=PENDING 2=SERVER_ACK 3=DELIVERY_ACK 4=READ
+      fromMe: u.key?.fromMe ?? null,
+      status: STATUS_LABELS[code] || 'unknown',
+      statusCode: code, // keep the raw code for clients who want it
     });
   }
 }
+
+// Expose for tests / external translation if ever needed.
+export { STATUS_LABELS };

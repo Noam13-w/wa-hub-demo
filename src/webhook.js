@@ -14,7 +14,31 @@ function sign(bodyString) {
 }
 
 /**
+ * Single POST attempt. Returns { ok: boolean, statusCode?, err? }.
+ */
+async function postOnce(url, body, signature, event) {
+  try {
+    const { statusCode } = await request(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-hub-signature': signature,
+        'x-hub-event': event,
+        'user-agent': `wa-hub-demo/${config.HUB_NAME}`,
+      },
+      body,
+      bodyTimeout: 10_000,
+      headersTimeout: 10_000,
+    });
+    return { ok: statusCode < 400, statusCode };
+  } catch (err) {
+    return { ok: false, err: err.message };
+  }
+}
+
+/**
  * Deliver an event to the configured webhook. Fire-and-forget (logs on failure).
+ * Performs ONE retry after 2s if the first attempt fails or returns non-2xx.
  * Filtering: if `state.webhook.events` is non-empty, only those events are delivered.
  */
 async function deliver(event, data) {
@@ -32,27 +56,19 @@ async function deliver(event, data) {
   const body = JSON.stringify(payload);
   const signature = sign(body);
 
-  try {
-    const { statusCode } = await request(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-hub-signature': signature,
-        'x-hub-event': event,
-        'user-agent': `wa-hub-demo/${config.HUB_NAME}`,
-      },
-      body,
-      bodyTimeout: 10_000,
-      headersTimeout: 10_000,
-    });
-    if (statusCode >= 400) {
-      log.warn({ event, url, statusCode }, 'webhook returned non-2xx');
-    } else {
-      log.debug({ event, url, statusCode }, 'webhook delivered');
+  let result = await postOnce(url, body, signature, event);
+  if (!result.ok) {
+    log.warn({ event, url, statusCode: result.statusCode, err: result.err }, 'webhook attempt 1 failed — retrying in 2s');
+    await new Promise((r) => setTimeout(r, 2000));
+    result = await postOnce(url, body, signature, event);
+    if (!result.ok) {
+      log.warn({ event, url, statusCode: result.statusCode, err: result.err }, 'webhook delivery failed after retry');
+      return;
     }
-  } catch (err) {
-    log.warn({ event, url, err: err.message }, 'webhook delivery failed');
+    log.info({ event, url, statusCode: result.statusCode }, 'webhook delivered on retry');
+    return;
   }
+  log.debug({ event, url, statusCode: result.statusCode }, 'webhook delivered');
 }
 
 /**
