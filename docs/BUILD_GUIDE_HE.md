@@ -6,8 +6,8 @@
 > שלך, חשוף לאינטרנט בצורה הגיונית, ומדבר עם כל פלטפורמה שאתה רוצה — Base44,
 > Bubble, Firebase, Make, Python, או כל דבר שיודע HTTP.
 
-> **זמן ביצוע:** ~45 דקות בידיים. **עלות:** €3.79 לחודש (Hetzner CAX11).
-> **רישיון:** MIT. **קוד מקור:** [github.com/noamnissan/wa-hub-demo](https://github.com/noamnissan/wa-hub-demo)
+> **זמן ביצוע:** ~45 דקות בידיים. **עלות:** €3.79–€3.99 לחודש (Hetzner CAX11 או CX23).
+> **רישיון:** MIT. **קוד מקור:** [github.com/Noam13-w/wa-hub-demo](https://github.com/Noam13-w/wa-hub-demo)
 
 ---
 
@@ -21,6 +21,21 @@
 - **בעלות מלאה** — הקוד שלך, השרת שלך, ה-token שלך, ההודעות שלך.
 - **עלות קבועה** — €3.79 לחודש כל החודש, בלי קשר אם שלחת 10 או מיליון הודעות.
 - **קוד פתוח** (MIT) — תפרק, תשנה, תפרסם, תמכור.
+
+### הקוד שתתקין
+
+הפרויקט `wa-hub-demo` הוא קוד פתוח, זמין ב-**[github.com/Noam13-w/wa-hub-demo](https://github.com/Noam13-w/wa-hub-demo)**. הוא כולל:
+
+- **שכבת Baileys** שמטפלת בפרוטוקול WhatsApp Web (חיבור, פיירינג, התחברות מחדש אוטומטית, נירמול הודעות)
+- **REST API** ב-Express עם 14 endpoints — שליחת טקסט/תמונה/קובץ/אודיו/מיקום/ריאקציה, פיירינג, סטטוס, ניהול webhook, ניהול קבוצות, בדיקה אם מספר רשום ב-WhatsApp
+- **WebSocket server** שמשדר אירועים בזמן אמת (`message.incoming`, `message.outgoing`, `message.status` עם וי כחול)
+- **Outbound webhooks** עם חתימת HMAC-SHA256 לאימות
+- **Bearer auth** עם השוואה constant-time + rate-limit
+- **טיפול ב-LID** של Baileys 7+ (שדות `senderPn`/`participantPn`/`remoteJidAlt` כדי לחלץ מספר טלפון אמיתי)
+- **systemd unit מוקשח** עם `NoNewPrivileges`, `ProtectSystem=strict`, `CapabilityBoundingSet=` ריק, `MemoryMax=512M`
+- **תיעוד API מלא** ב-`docs/API.md` ו-`docs/ARCHITECTURE.md`
+
+הכל ב-MIT, אתה יכול לעשות איתו מה שתרצה.
 
 ### מה זה לא:
 
@@ -255,19 +270,43 @@ chmod 600 ~/.ssh/authorized_keys
 
 ---
 
-## שלב 3 — בוחרים מסלול: ידני או Claude Code
+## שלב 3 — בוחרים מסלול
 
-מכאן יש שתי דרכים לבנות את ה-Hub:
+מכאן יש **שלוש** דרכים לבנות את ה-Hub:
 
-| | **מסלול A** — ידני | **מסלול B** — עם Claude Code |
-|--|---|---|
-| **קצב** | איטי, מבוקר | מהיר |
-| **למידה** | מבינים כל שורה | מבינים את הזרימה |
-| **התאמה אישית** | קלה | קלה (מבקשים מ-Claude) |
-| **מומלץ ל-** | פעם ראשונה | פעם שלישית והלאה |
+| | **מסלול A** — ידני | **מסלול B** — Claude Code | **מסלול C** — Express |
+|--|---|---|---|
+| **קצב** | איטי, מבוקר | מהיר | מיידי (3 דקות) |
+| **למידה** | מבינים כל שורה | מבינים את הזרימה | nothing — קופסה שחורה |
+| **התאמה אישית** | קלה | קלה (מבקשים מ-Claude) | אחר-כך לערוך ידנית |
+| **מומלץ ל-** | פעם ראשונה / וובינר | פעם שלישית והלאה | פרודקשן שאתה סומך |
 
 > **המלצה לוובינר:** התחילו במסלול A (איטי) כדי שהקהל יבין מה קורה.
-> בסוף הראו דמו של B כפיתוי לעתיד.
+> בסוף הראו דמו של C כפיתוי — "מסלול אקספרס בשורה אחת ל-deploy לפרודקשן".
+
+### מסלול C — Express (אופציה אקספרסית: שורה אחת)
+
+אם יש לכם שרת Hetzner חדש (Ubuntu 24.04 כ-root), והעיקר זה שזה יעבוד מהר:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | bash
+```
+
+הסקריפט עושה הכל אוטומטית:
+- עדכוני מערכת + הקשחת SSH + ufw + fail2ban
+- Node 20 + יצירת user `wahub` + git clone + npm install
+- יצירת סודות אקראיים (`HUB_TOKEN`, `WEBHOOK_SECRET`)
+- התקנת `wa-hub.service` + drop-in לתיקון seccomp של Node 20
+- Cloudflare Tunnel + systemd unit
+- מדפיס לבסוף: **URL ציבורי**, **HUB_TOKEN**, **WEBHOOK_SECRET**, ופקודות מוכנות לפיירינג + שליחה ראשונה
+
+זמן ביצוע: **~3 דקות**. אחרי שהוא רץ, קופצים לשלב 5 (פיירינג).
+
+> **רוצים לראות מה הסקריפט עושה לפני שאתם רצים?** הקובץ נקרא ב-[`deploy/install.sh` ברפו](https://github.com/Noam13-w/wa-hub-demo/blob/main/deploy/install.sh) — 130 שורות קריאות, אפס קסם.
+
+---
+
+### בחירת מסלול
 
 ---
 
@@ -303,6 +342,13 @@ systemctl enable --now fail2ban
 > ננעלים אוטומטית אחרי 3 ניסיונות. ה-Hub עצמו לא חשוף — נטפל בזה דרך Tunnel
 > בשלב 6.
 
+> **לא להיבהל מה-output:** הבלוק הזה מדפיס הרבה מאוד שורות (`apt` רושם כל
+> חבילה שמתקנת/משדרגת). תוך כדי fail2ban תראו `SyntaxWarning: invalid escape
+> sequence '\s'` — אלה אזהרות קוסמטיות של Python ולא משפיעות על שום דבר.
+> אם בסוף יש לכם prompt `root@wa-hub-demo:~#` — הכל בסדר. אם בנוסף ראיתם
+> `Pending kernel upgrade!` — זה אומר שיש קרנל חדש שיתפוס באתחול הבא, ואין
+> צורך לעשות עם זה כלום עכשיו.
+
 ### A.2 — התקנת Node, יצירת משתמש שירות, ושכפול הקוד
 
 ```bash
@@ -310,17 +356,26 @@ systemctl enable --now fail2ban
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 
-# משתמש שירות (לא root!) — אם פולש מצליח להריץ קוד, הוא מקבל הרשאות מוגבלות
-useradd --system --shell /usr/sbin/nologin --home-dir /srv/wa-hub-demo --create-home wahub
+# משתמש שירות (בלי --create-home, כי הסטריקטר git ניסה אחר כך ייצור את התיקייה)
+useradd --system --shell /usr/sbin/nologin --home-dir /srv/wa-hub-demo wahub
 
-# שכפול ושיכפול חבילות (כ-wahub, לא כ-root)
+# שכפול הקוד כ-root (כי /srv אינה ניתנת לכתיבה ל-wahub), ואז העברת בעלות
 cd /srv
-sudo -u wahub git clone https://github.com/noamnissan/wa-hub-demo.git
-sudo -u wahub bash -c "cd wa-hub-demo && npm ci --omit=dev"
+git clone https://github.com/Noam13-w/wa-hub-demo.git
+chown -R wahub:wahub /srv/wa-hub-demo
+
+# התקנת חבילות (כ-wahub)
+sudo -u wahub bash -c "cd /srv/wa-hub-demo && npm install --omit=dev"
 ```
 
-> `npm ci` מתקין את הגרסאות **המדויקות** מ-`package-lock.json` (לא כמו
-> `npm install` שעלול לעדכן). אותו setup, אותן גרסאות, בכל פעם.
+> השתמשנו ב-`npm install` כי הוא סלחני יותר עם transitive dependencies (כמו
+> `sharp` שתלוי ב-Baileys). אם תעדיף את ההתנהגות הקפדנית של `npm ci`, ודא
+> שה-`package-lock.json` עדכני: `npm install` פעם אחת מקומית, push, ואז בשרת
+> תוכל להשתמש ב-`npm ci`.
+
+> **למה לא `--create-home`?** הדגל יוצר את `/srv/wa-hub-demo` ריק, וגית
+> אחר-כך מסרב לעשות clone לתיקייה לא ריקה. הפתרון: יוצרים את המשתמש בלי
+> תיקייה, גית בונה את התיקייה במהלך ה-clone כ-root, ואז משייכים אותה ל-wahub.
 
 ### A.3 — סודות + הפעלה כשירות אוטומטי
 
@@ -394,8 +449,8 @@ claude
 ובתוך Claude הקלידו:
 
 ```
-המטרה שלי: על שרת Hetzner חדש (Ubuntu 24.04 ARM, IP=<X.X.X.X>),
-להתקין את הפרויקט https://github.com/noamnissan/wa-hub-demo, להריץ אותו
+המטרה שלי: על שרת Hetzner חדש (Ubuntu 24.04 — x86 או ARM, IP=<X.X.X.X>),
+להתקין את הפרויקט https://github.com/Noam13-w/wa-hub-demo, להריץ אותו
 כ-systemd service תחת משתמש wahub, ולהקים Cloudflare Quick Tunnel
 שיחשוף אותו לאינטרנט.
 
@@ -413,61 +468,91 @@ Claude Code יעבור צעד-צעד, ישאל לאישור לפעולות risky
 
 ## שלב 5 — פיירינג WhatsApp
 
-ה-Hub רץ, אבל הוא עוד לא מחובר לאף מספר. בואו נחבר.
+ה-Hub רץ, אבל הוא עוד לא מחובר לאף מספר. עכשיו נחבר.
 
-### 5.1 — שליפת ה-QR מהשרת
+> **⏱ זה החלק הטריקי:** ל-QR יש תוקף של **60 שניות** ואז הוא מתחלף. לכן צריך
+> **להכין הכל מראש** — טלפון פתוח, חלון PowerShell מוכן — ואז בלחיצה אחת על השרת
+> כל השאר רץ במהירות. הסיקוונס המלא: ~10 שניות.
 
-```bash
-# על השרת
-TOKEN=$(grep HUB_TOKEN /srv/wa-hub-demo/.env | cut -d= -f2)
+### 5.1 — להכין הכל מראש (לפני שמייצרים QR!)
 
-# מצב נוכחי (צריך להיות "qr")
-curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3060/api/instance/status
+**(א) על הטלפון:** פתח WhatsApp → **הגדרות** → **מכשירים מקושרים** → **קישור מכשיר**.
+המצלמה תפתח ותחכה למשהו לסרוק. **השאר את זה פתוח.**
 
-# שמרו את ה-QR כתמונה
-curl -sS -H "Authorization: Bearer $TOKEN" \
-     http://127.0.0.1:3060/api/instance/qr.png > /tmp/qr.png
+**(ב) על המחשב המקומי:** פתח **חלון PowerShell חדש** (לא בשרת!). הקלד את
+הפקודה הבאה אבל **אל תלחץ Enter עדיין** — נריץ אותה ברגע הנכון:
+
+```powershell
+scp root@<IP>:/tmp/qr.png $HOME\qr.png; Start-Process $HOME\qr.png
 ```
 
-### 5.2 — העברת ה-QR למחשב המקומי לסריקה
+(החלף את `<IP>` בכתובת השרת שלך. המקבילה ל-Mac/Linux: `scp root@<IP>:/tmp/qr.png ~/qr.png && open ~/qr.png`.)
 
-**במחשב המקומי** (לא בשרת!), הורידו את הקובץ:
+**(ג) בחלון ה-SSH לשרת**, הקלד גם פה אבל **אל תלחץ Enter עדיין**:
 
 ```bash
-# Mac / Linux:
-scp -i ~/.ssh/id_ed25519 root@<IP>:/tmp/qr.png ~/qr.png
-open ~/qr.png
-
-# Windows PowerShell:
-scp -i $HOME\.ssh\id_ed25519 root@<IP>:/tmp/qr.png $HOME\qr.png
-Start-Process $HOME\qr.png
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3060/api/instance/qr.png -o /tmp/qr.png
 ```
 
-> **שימו לב ל-`-i`:** אנחנו נעלנו את SSH ל-key only ב-A.2. אם המפתח שלכם לא
-> בנתיב ברירת המחדל (`~/.ssh/id_ed25519`), תצטרכו לציין מפורש איזה key. אם
-> המפתח כן בברירת מחדל, אפשר להשמיט `-i`.
+(וודא שעדיין יש לך `$TOKEN` טעון. אם פתחת SSH מחדש, הריץ קודם:
+`TOKEN=$(grep HUB_TOKEN /srv/wa-hub-demo/.env | cut -d= -f2)`)
 
-### 5.3 — סריקה מהטלפון
+### 5.2 — הסיקוונס המהיר
 
-1. WhatsApp → **הגדרות** → **מכשירים מקושרים**
-2. **קישור מכשיר** → סרקו את הקוד
-3. תוך 2-3 שניות — לוג השרת יראה `WhatsApp connected`
+עכשיו שהכל מוכן:
 
-> **טיפ לוובינר:** הריצו `watch -n2 "curl -sS -H 'Authorization: Bearer $TOKEN' http://127.0.0.1:3060/api/instance/status"`
-> כדי לראות בזמן אמת איך ה-state עובר מ-`qr` ל-`connecting` ל-`connected`.
+1. **בחלון ה-SSH** → **Enter** (curl שומר את ה-QR ב-`/tmp/qr.png`)
+2. **בחלון PowerShell** → **Enter** (scp מוריד, ו-Start-Process פותח את התמונה)
+3. **בטלפון** → סרוק את התמונה שנפתחה במחשב
 
-### 5.4 — בדיקה: שולחים הודעה לעצמכם
+תוך 2-3 שניות תראה בלוג של השרת `WhatsApp connected`, ובטלפון תראה את ההתקן בליסט "מכשירים מקושרים".
+
+> **אם פספסת ב-60 שניות:** פשוט תריץ שוב את אותן 2 פקודות (Enter ב-SSH → Enter ב-PowerShell).
+> ה-Hub מייצר QR חדש כל 60 שניות אוטומטית.
+
+### 5.3 — בדיקה: שולחים הודעה לסוכן AI שלי
+
+על השרת:
 
 ```bash
 TOKEN=$(grep HUB_TOKEN /srv/wa-hub-demo/.env | cut -d= -f2)
-
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"to":"972501234567","text":"Hello from my Hub!"}' \
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+     -d '{"to":"35796699735","text":"יצרתי api של הווטצאפ שלי על שרת מנוהל בעזרת המדריך של נעם ניסן! מדהים!"}' \
      http://127.0.0.1:3060/api/messages/send/text
 ```
 
-(החליפו את `972501234567` במספר שלכם, **בלי** `+`, **עם** קוד מדינה.)
+> **המספר `35796699735`** הוא הסוכן AI שלי. שלח לו את ההודעה כדי לבדוק
+> שה-API שלך עובד — אל תדאג לספאם, הוא יודע להתמודד וגם יענה לכם בתגובה
+> משעשעת 🙂
+>
+> בהמשך, כשתרצה לשלוח למספרים אחרים (לקוחות, חברים), פשוט החלף את ה-`to`
+> במספר היעד. הפורמט: קוד מדינה בלי `+` ובלי `0` בהתחלה, ואז המספר.
+> דוגמה — `0585802298` הופך ל-`972585802298`.
+
+### 5.4 — איפוס אם ניתקתם בטעות (או בכוונה)
+
+אם ניתקתם את המכשיר מהטלפון (WhatsApp → מכשירים מקושרים → לחיצה על ההתקן → ניתוק),
+ה-Hub יזהה `loggedOut` ויפסיק להתחבר מחדש (התנהגות מכוונת — לא רוצים שהוא ינסה
+לחזור בלי הסכמתכם). תראו בלוג:
+
+```
+ERROR: Device was logged out from the phone. Clear /data/auth and re-pair.
+```
+
+**לאפס ולקבל QR חדש:**
+
+```bash
+TOKEN=$(grep HUB_TOKEN /srv/wa-hub-demo/.env | cut -d= -f2)
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3060/api/instance/logout
+```
+
+זה מוחק את `data/auth`, מפעיל מחדש את Baileys, ותוך 3-4 שניות יש QR חדש. אחר-כך
+חזרו לשלב 5.1 לסריקה מחדש.
+
+> **למה הם לא מתחברים אוטומטית?** במכוון. אם הטלפון הראשי החליט שלא רוצה את ההתקן
+> הזה יותר, רוצים שתאשרו במודע שזה היה תאונה ולא מישהו חיצוני שהשתלט. אותו דבר
+> קורה במקרה של `connectionReplaced` (קוד 440) — שני sessions לא מסתחבים זה
+> עם זה אינסוף.
 
 ---
 
@@ -479,7 +564,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ### 6.1 — התקנת cloudflared
 
 ```bash
-ARCH=$(dpkg --print-architecture)  # arm64 אם בחרתם CAX11
+ARCH=$(dpkg --print-architecture)  # מחזיר אוטומטית: amd64 ל-CX23, arm64 ל-CAX11
 curl -fsSL -o cloudflared.deb \
   "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARCH.deb"
 dpkg -i cloudflared.deb
@@ -544,38 +629,153 @@ journalctl -u cloudflared-wahub.service -n 30 --no-pager | \
   grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1
 ```
 
-### 6.4 — Named Tunnel (URL קבוע, דורש חשבון Cloudflare + דומיין)
+### 6.4 — Named Tunnel (URL קבוע על דומיין שלך)
 
-לפרודקשן, השתמשו ב-Named Tunnel:
+ל-**פרודקשן**, אתה רוצה URL יציב כמו `https://api.yourdomain.com` במקום `hughes-random-words.trycloudflare.com` שמתחלף בכל restart.
+
+#### מה צריך לפני שמתחילים
+
+- **דומיין** (מ-Namecheap, GoDaddy, Cloudflare Registrar, או כל רושם אחר). אפילו דומיין זול ב-$10/שנה עובד.
+- **הדומיין מנוהל ב-Cloudflare DNS.** אם רכשת ב-Cloudflare — אוטומטית. אם במקום אחר — צריך להוסיף את הדומיין ל-Cloudflare ולעדכן את ה-nameservers. הדרכה: [developers.cloudflare.com/dns/zone-setups/full-setup](https://developers.cloudflare.com/dns/zone-setups/full-setup/).
+
+#### תוכן: subdomain או root?
+
+**מומלץ: subdomain ייעודי**, למשל `api.yourdomain.com` או `wa.yourdomain.com`.
+
+| | subdomain (`api.example.com`) | root (`example.com`) |
+|---|---|---|
+| בידוד מהאתר הראשי | ✅ | ❌ |
+| יכול לחיות ביחד עם אתר wordpress / וכו' על השרת הראשי | ✅ | ❌ (דורש redirect) |
+| נהוג בתעשייה | ✅ | רק לפרויקטים API-only |
+
+בדוגמאות מתחת אני אשתמש ב-`api.example.com`. **תחליפו לדומיין שלכם**.
+
+#### שלב-אחר-שלב
+
+**1. התחברות ראשונית של cloudflared לחשבון שלך:**
 
 ```bash
-# התחברות (יפתח URL להעתיק לדפדפן)
 cloudflared tunnel login
+```
 
-# יצירת tunnel
+יוצא URL לדפדפן. פתחו אותו במחשב הראשי שלכם, התחברו ל-Cloudflare, ובחרו את הדומיין שלכם מהרשימה. אחרי האישור — `~/.cloudflared/cert.pem` נכתב על השרת.
+
+**2. יצירת tunnel בשם:**
+
+```bash
 cloudflared tunnel create wa-hub
+```
 
-# קונפיגורציה — שמרו את ה-TUNNEL_ID שהודפס למעלה
+הפלט יראה משהו כמו:
+```
+Created tunnel wa-hub with id 4f7c9d3e-abcd-1234-5678-90abcdef1234
+```
+
+**שמרו את ה-tunnel ID הזה.** קוראים לו `<TID>` במשך כל ה-instructions.
+
+**3. ניתוב DNS — מחבר את הסאב-דומיין ל-tunnel:**
+
+```bash
+cloudflared tunnel route dns wa-hub api.example.com
+```
+
+(החליפו `api.example.com` בסאב-דומיין שלכם.) **הפקודה הזאת יוצרת אוטומטית רשומת CNAME ב-Cloudflare** שמצביעה לתעבורה לתוך ה-tunnel — אתם **לא צריכים** לפתוח את Cloudflare ולעשות זה ידנית.
+
+> אם תרצו עוד סאב-דומיינים על אותו tunnel (למשל גם `wa.example.com` או `api.example.co.il`), פשוט הריצו את הפקודה הזאת שוב לכל אחד.
+
+**4. קונפיגורציה של ה-tunnel — איזה traffic איפה ינתב:**
+
+```bash
 mkdir -p /etc/cloudflared
-cat > /etc/cloudflared/config.yml <<'EOF'
-tunnel: <TUNNEL_ID_HERE>
-credentials-file: /root/.cloudflared/<TUNNEL_ID_HERE>.json
+```
+
+```bash
+nano /etc/cloudflared/config.yml
+```
+
+הדביקו (החליפו `<TID>` ב-tunnel ID שלכם, ו-`api.example.com` בסאב-דומיין):
+
+```yaml
+tunnel: <TID>
+credentials-file: /root/.cloudflared/<TID>.json
+
 ingress:
-  - hostname: api.yourdomain.com
+  - hostname: api.example.com
     service: http://127.0.0.1:3060
   - service: http_status:404
-EOF
+```
 
-# DNS routing
-cloudflared tunnel route dns wa-hub api.yourdomain.com
+הסבר על הבלוק `ingress`:
+- כל בקשה לכתובת `api.example.com` עוברת ל-Hub שלכם ב-`127.0.0.1:3060` ✓
+- כל בקשה אחרת מקבלת 404 (fallback ברירת מחדל — חובה!)
 
-# התקנה כ-systemd
+שמרו (`Ctrl+O`, `Enter`, `Ctrl+X` ב-nano).
+
+**5. אם יש לכם כבר Quick Tunnel רץ כ-systemd — עצרו אותו:**
+
+```bash
+systemctl disable --now cloudflared-wahub.service 2>/dev/null
+```
+
+(אחרת תהיו עם 2 tunnels שמסתחבים על אותו פורט.)
+
+**6. התקנה כ-systemd service של cloudflared הרשמית:**
+
+```bash
 cloudflared service install
+```
+
+ה-CLI מתקין את עצמו כ-systemd עם השם `cloudflared.service`. הוא יקרא אוטומטית את `/etc/cloudflared/config.yml`.
+
+**7. הפעלה ובדיקה:**
+
+```bash
 systemctl enable --now cloudflared
 ```
 
-עכשיו ה-API שלכם זמין ב-`https://api.yourdomain.com` באופן קבוע, מאחורי
-Cloudflare (DDoS protection חינם, SSL אוטומטי).
+```bash
+sleep 5 && systemctl status cloudflared --no-pager
+```
+
+צריך לראות `active (running)`. לוג שגיאות:
+
+```bash
+journalctl -u cloudflared -n 50 --no-pager
+```
+
+**8. בדיקה ממחשב חיצוני:**
+
+```bash
+curl https://api.example.com/healthz
+```
+
+צריך להחזיר `{"ok":true, ...}`. אם כן — **הצלחתם**! ה-Hub שלכם זמין עכשיו ב-`https://api.example.com` באופן קבוע, מאחורי Cloudflare (DDoS protection ו-SSL — הכל אוטומטי, חינם).
+
+#### עדכוני הסביבה אחרי המעבר ל-Named Tunnel
+
+- **עדכנו את ה-WEBHOOK_URL ב-.env** כדי לא ללכת לאיבוד בכל restart:
+  ```bash
+  sed -i 's|^WEBHOOK_URL=.*|WEBHOOK_URL=https://api.example.com/your-webhook-endpoint|' /srv/wa-hub-demo/.env
+  systemctl restart wa-hub
+  ```
+- **בכל מקום שהשתמשתם ב-URL הזמני** (Base44 secrets, Bubble API config וכו') — תחליפו ל-`https://api.example.com`. זה לא יותר ישתנה.
+
+#### אם אתם רוצים יותר מ-tunnel אחד
+
+מבנה ה-config.yml מאפשר routing מתוחכם — כל hostname לפורט אחר, או אפילו לשרת אחר. דוגמה:
+
+```yaml
+ingress:
+  - hostname: api.example.com
+    service: http://127.0.0.1:3060
+  - hostname: admin.example.com
+    service: http://127.0.0.1:8080
+  - hostname: db.example.com
+    service: tcp://127.0.0.1:5432
+  - service: http_status:404
+```
+
+זה אומר: tunnel אחד יכול לתת שירות לכמה אפליקציות במקביל, כל אחת על subdomain שלה.
 
 ---
 
@@ -764,237 +964,358 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## שלב 8 — אינטגרציה מלאה ל-Base44
+## שלב 8 — אינטגרציה מלאה ל-Base44 (דרך הצ'אט/Builder)
 
-Base44 מקבל פרק מורחב כי הוא נפוץ מאוד בקהילה של no-code/low-code,
-ויש בו כמה גיצ'ות אמיתיות שכדאי לדעת לפני שמתחילים.
+Base44 מקבל פרק מורחב כי הוא נפוץ מאוד בקהילה של no-code/low-code. במקום
+לכתוב קוד ידנית, נשתמש ב-Builder של Base44 — הצ'אט-AI שמייצר לכם את הקוד.
+תכתבו לו prompt אחד טוב, והוא יבנה את ה-entities, ה-functions, וה-UI.
 
-### 8.1 — יצירת פרויקט וחיבור CLI
+> **אופציה מתקדמת:** אם אתם מפתחים שמעדיפים CLI — ראו 8.7 בסוף הפרק.
+
+### 8.1 — יצירת פרויקט חדש ב-Base44
+
+1. כנסו ל-[**app.base44.com**](https://app.base44.com) (תירשמו אם אין לכם חשבון — חינם)
+2. במסך הראשי לחצו **"Create new app"** (או "פרויקט חדש")
+3. תיפתח חלון צ'אט. תקבלו prompt התחלתי — תוכלו לכתוב שם בעברית או באנגלית.
+
+### 8.2 — ה-Prompt: התקנת **הקונקטור** ל-WhatsApp Hub
+
+הרעיון: הדביקו את ה-prompt הזה ב-Base44 builder כדי **להתקין את החיבור** ל-Hub —
+בלי לבנות אפליקציה ספציפית. אחרי שזה רץ, יש לכם 3 פונקציות מוכנות שאפשר לקרוא
+מכל מקום באפליקציה שלכם. בשלב הבא תגידו ל-Base44 מה לעשות עם זה: "תוסיף כפתור
+'שלח WhatsApp' לכל לקוח", "תפתח דף צ'אט", "תגרום לבוט לענות אוטומטית" וכו'.
+
+> **חשוב — סודות:** ה-prompt למטה כולל פלייסהולדרים כמו `<YOUR_TUNNEL_URL>` בתוך
+> בלוק ה-secrets. **אל תערכו את הפלייסהולדרים בידיים** ואל תדביקו את הערכים האמיתיים
+> שלכם לתוך ה-chat. תדביקו את הטקסט בדיוק כמו שהוא. Base44 יזהה אוטומטית את שמות
+> ה-secrets, יקפיץ דיאלוג מאובטח, ויבקש מכם להדביק את הערכים שם. כך הסודות
+> נשמרים מוצפנים — לא מופיעים בהיסטוריית הצ'אט שאולי משותפת עם הצוות.
+
+**הדביקו ב-Base44 chat:**
+
+```
+Install a WhatsApp HTTP connector into this app — DO NOT build any UI yet,
+just the secrets, helper backend functions, and a Message entity for logging.
+I'll tell you what to build with it in follow-up prompts.
+
+══════ STEP 1 — SECRETS (set these in Base44 → Settings → Secrets BEFORE deploying) ══════
+WA_HUB_URL     = <YOUR_TUNNEL_URL>          # e.g. https://api.example.com
+WA_HUB_TOKEN   = <YOUR_HUB_TOKEN>           # the long random string from .env on the server
+WA_HUB_SECRET  = <YOUR_WEBHOOK_SECRET>      # the other long random string from .env
+
+══════ STEP 2 — ENTITY ══════
+WhatsAppMessage
+  - direction: enum "incoming" | "outgoing"
+  - text: text
+  - ts: number                  # unix ms timestamp
+  - external_id: string         # message id from the Hub
+  - chat_number: string         # the OTHER side's phone (bare, no +)
+RLS: public read/write/create/delete — needed so the anonymous webhook can write.
+
+══════ STEP 3 — BACKEND FUNCTIONS (Deno) ══════
+
+1. sendWhatsApp(to, text)
+   - Public function (no auth required).
+   - Input: { to: string, text: string }   — `to` is a phone like "972585802298" (no +, with country code)
+   - POST to `${WA_HUB_URL}/api/messages/send/text` with
+       headers: { Authorization: `Bearer ${WA_HUB_TOKEN}`, "Content-Type": "application/json" }
+       body:    JSON.stringify({ to, text })
+   - On success, log it via asServiceRole.entities.WhatsAppMessage.create({
+       direction: "outgoing", text, ts: Date.now(),
+       external_id: data.id, chat_number: to
+     })
+   - Return { ok: true, id: data.id } on success, or { ok: false, error } on failure.
+
+2. whatsappWebhook
+   - Public (the Hub calls this from the internet, no Base44 user auth).
+   - Read raw body as TEXT first (do NOT parse JSON yet).
+   - Read header "x-hub-signature".
+   - Compute expected = "sha256=" + HMAC-SHA256(WA_HUB_SECRET, body).hex()
+     IMPORTANT: do NOT use Node's Buffer or timingSafeEqual — they are NOT
+     reliably available in Base44's Deno runtime and will crash with 500.
+     Use Web Crypto API instead:
+       const enc = new TextEncoder();
+       const key = await crypto.subtle.importKey(
+         "raw", enc.encode(SECRET),
+         { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+       );
+       const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+       const hex = [...new Uint8Array(sig)]
+         .map(b => b.toString(16).padStart(2, "0")).join("");
+       const expected = "sha256=" + hex;
+       // simple equal-length string compare is fine for HMAC verification
+       if (given !== expected) return new Response("bad sig", { status: 401 });
+   - Parse JSON. Handle BOTH directions:
+     IF event === "message.incoming" AND data.type === "text":
+       chat_number = data.fromNumber || data.from   // the OTHER side
+       direction = "incoming"
+     ELSE IF event === "message.outgoing" AND data.type === "text":
+       chat_number = data.chat?.split("@")[0] || data.chat  // the OTHER side (recipient)
+       direction = "outgoing"
+     ELSE skip (just return 200).
+     Then:
+       await asServiceRole.entities.Message.create({
+         direction,
+         text:        data.text,
+         ts:          data.timestamp,
+         external_id: data.id,
+         chat_number,
+       });
+   - Return 200 "ok" always (so the Hub doesn't retry on parsing issues that aren't auth).
+
+3. getWhatsAppStatus
+   - Public.
+   - GET `${WA_HUB_URL}/api/instance/status` with `Authorization: Bearer ${WA_HUB_TOKEN}`
+   - Return the JSON as-is.
+
+══════ IMPORTANT — gotchas to apply throughout ══════
+- Base44 `base44.functions.invoke()` returns an axios-style wrapper. From the
+  FRONTEND read `r.data.X` (not `r.X`). Easy to miss, will look like
+  "function returned undefined" otherwise.
+- Backend entity ops from anonymous functions (the webhook) MUST use
+  `base44.asServiceRole.entities.X` — regular `.entities.X` requires a logged-in user.
+- Use Web Crypto API for HMAC, NOT Node's `Buffer` / `timingSafeEqual` —
+  Base44's Deno runtime does NOT reliably expose Node's Buffer. Calling it
+  crashes the function with 500. Stick to `crypto.subtle.sign(...)` + `TextEncoder`
+  as shown in the whatsappWebhook spec above.
+- The Message entity MUST have RLS set to public ({ create:true, read:true,
+  update:true, delete:true }) so anonymous webhook calls can write to it.
+- Phone numbers passed to `sendWhatsApp` should be BARE digits with country code:
+  Israeli "0585802298" → "972585802298". No `+`, no `0` at the start.
+
+That's it. Don't build any pages, dashboards, or chat UIs yet. Just confirm
+the secrets are set, deploy the functions, and tell me the public URL of
+`whatsappWebhook` so I can register it back on my Hub.
+```
+
+### 8.3 — אחרי שהקונקטור התקין: עכשיו תבנו את האפליקציה שלכם
+
+עכשיו יש לכם 3 פונקציות מוכנות (`sendWhatsApp`, `whatsappWebhook`, `getWhatsAppStatus`)
+ו-entity לוג. תוכלו לכתוב ל-Base44 כל בקשה שמשתמשת בהן. דוגמאות:
+
+> **"תבנה לי CRM של לקוחות. בכל קלף לקוח שיהיה כפתור 'שלח WhatsApp' שפותח modal עם textarea, ובלחיצה על שלח מפעיל את הפונקציה sendWhatsApp עם המספר של הלקוח."**
+
+> **"תפתח לי דף צ'אט שדומה ל-WhatsApp Web — אני רוצה לראות את כל ה-WhatsAppMessage שיש לי בdb, ממוין לפי ts, מסונן לפי chat_number שאקבל מ-URL parameter. למטה תיבת טקסט + כפתור שלח שקורא ל-sendWhatsApp."**
+
+> **"כשמגיע incoming WhatsApp מ-whatsappWebhook, אם הטקסט מתחיל ב-'הזמנה', תיצור entity חדש Order מהטקסט ותתייג ב-Slack."**
+
+> **"תוסיף לוח בקרה שמראה: כמה הודעות נשלחו השבוע, כמה התקבלו, ו-status בזמן אמת מ-getWhatsAppStatus."**
+
+> **"אתה כבר יודע לדבר עם המספר שלי. אני רוצה שעכשיו יהיה אצלי בוט שמקבל הודעות נכנסות, שולח אותן ל-LLM, וחוזר עם תשובה אוטומטית. רק להודעות שמתחילות עם '!ai'."**
+
+הרעיון: ה-prompt הראשוני מתקין **התשתית**. ה-prompts הבאים בונים את **התוכן**.
+
+### 8.4 — להגיד ל-Hub שלכם איפה Base44 נמצא
+
+#### למה צריך את השלב הזה?
+
+יש לכם **שני מערכות** שצריכות לתקשר ביניהן: ה-Base44 ב-cloud וה-Hub שלכם בשרת.
+הן צריכות לדעת אחת על השנייה כדי שזרימה דו-כיוונית של הודעות תעבוד.
+
+| כיוון | מי יוזם | איך מתקנים |
+|---|---|---|
+| **יוצא:** Base44 → Hub → WhatsApp | Base44 (כשמשתמש לוחץ "שלח") | ✅ עובד מעצמו — Base44 כבר יודע את `WA_HUB_URL` מהסודות |
+| **נכנס:** WhatsApp → Hub → Base44 | ה-Hub (כשמגיעה הודעה לטלפון) | ⚠️ **דורש הגדרה** — צריך לתת ל-Hub את ה-URL של ה-webhook ב-Base44 |
+
+ב-מילים אחרות: **שליחה מהאפליקציה כבר עובדת** אחרי שלב 8.3. בשלב הזה אנחנו
+מסדרים את הכיוון השני — שהודעות שמישהו ישלח לכם ב-WhatsApp יגיעו ל-Base44.
+
+#### איך — שלושה צעדים:
+
+**צעד 1: שלפו את ה-URL של ה-webhook מ-Base44.**
+
+ב-Base44 dashboard → **Functions** → לחיצה על **whatsappWebhook** → חפשו שדה
+שכתוב בו "**Public URL**" / "**Endpoint URL**" / "**Webhook URL**" / "**Trigger URL**".
+
+#### אם לא רואים שדה כזה — אפשר לחלץ ידנית מה-URL בדפדפן
+
+Base44 לפעמים לא מציגים את ה-URL הציבורי בולט בממשק. תוכלו לחלץ אותו מ-URL
+הדפדפן בכניסה לפרויקט:
+
+```
+https://app.base44.com/apps/691f3cf4544082ec29d16b6e/editor/workspace/api...
+                          ^^^^^^^^^^^^^^^^^^^^^^^^
+                          זה ה-App ID
+```
+
+ה-App ID הוא הקטע בין `/apps/` ל-`/editor/` — מחרוזת hex של 24 תווים.
+
+**הפורמט של ה-URL לפונקציה** נראה כך:
+
+```
+https://app.base44.com/api/apps/<APP_ID>/functions/whatsappWebhook
+```
+
+לדוגמה עם ה-App ID למעלה:
+```
+https://app.base44.com/api/apps/691f3cf4544082ec29d16b6e/functions/whatsappWebhook
+```
+
+> **חלופה:** יש פרויקטים ב-Base44 שיש להם sub-domain קבוע (כמו `myapp-1234abcd.base44.app`).
+> אם זה המקרה אצלכם, תוכלו להשתמש ב-`https://<your-subdomain>.base44.app/api/functions/whatsappWebhook`.
+> ה-`app.base44.com/api/apps/...` למעלה תמיד עובד — לכן מומלץ לנסות אותו קודם.
+
+**צעד 2: רישמו את ה-URL הזה ב-Hub** (בחלון SSH לשרת — תחליפו את ה-URL במה שהעתקתם):
 
 ```bash
-# על המחשב המקומי
+TOKEN=$(grep HUB_TOKEN /srv/wa-hub-demo/.env | cut -d= -f2)
+WEBHOOK_URL="https://abc123.base44.app/api/functions/whatsappWebhook"
+
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+     -d "{\"url\":\"$WEBHOOK_URL\",\"events\":[\"message.incoming\",\"message.outgoing\"]}" \
+     http://127.0.0.1:3060/api/instance/webhook
+```
+
+> **חשוב:** רשמנו שני events — `message.incoming` (הודעות שמגיעות אליך) ו-`message.outgoing`
+> (הודעות שאתה שולח). אם תיקח רק `message.incoming`, הודעות שאתה שולח **מהטלפון** לא יופיעו ב-Base44
+> (רק הודעות שתשלח מה-Base44 itself, דרך פונקציית `sendWhatsApp`).
+
+תקבלו תגובה כזאת:
+```json
+{"url":"https://abc123.base44.app/api/functions/whatsappWebhook","events":["message.incoming"]}
+```
+
+**צעד 3: שמרו את ההגדרה גם ב-`.env`** כדי שלא תאבד אם השרת מתחיל מחדש:
+
+```bash
+sed -i "s|^WEBHOOK_URL=.*|WEBHOOK_URL=$WEBHOOK_URL|" /srv/wa-hub-demo/.env
+sed -i "s|^WEBHOOK_EVENTS=.*|WEBHOOK_EVENTS=message.incoming,message.outgoing|" /srv/wa-hub-demo/.env
+systemctl restart wa-hub
+```
+
+זהו — עכשיו ה-Hub יודע איפה לשלוח כל הודעה שמגיעה ל-WhatsApp שלכם.
+
+### 8.5 — בדיקה: זרימה דו-כיוונית
+
+ב-Base44, פתחו את הדף שביקשתם מ-Builder לבנות (CRM, צ'אט, מה שיהיה). אז:
+
+1. **שלחו הודעה דרך ה-UI שלכם** → אמורה להגיע ל-WhatsApp תוך 1-2 שניות.
+2. **ענו מהטלפון** → תוך 2-3 שניות ה-`whatsappWebhook` יקבל את האירוע, יאמת חתימה, ויכתוב ל-DB. ה-UI שלכם (אם בנוי לזה) יראה את ההודעה.
+
+אם משהו לא עובד — בדקו ב-Base44 dashboard:
+- **Functions** → לחיצה על שם הפונקציה → **Logs** — תראו את כל הקריאות וההודעות שגיאה.
+
+### 8.6 — טיפים חשובים (Base44-specific)
+
+| בעיה | פתרון |
+|---|---|
+| הפרונט מקבל 200 OK אבל מציג undefined | `base44.functions.invoke()` מחזיר axios wrapper. תקראו `r.data.X` ולא `r.X`. |
+| webhook מחזיר 401 למרות חתימה נכונה | בדקו ש-`WA_HUB_SECRET` ב-Base44 secrets זהה בדיוק ל-`WEBHOOK_SECRET` ב-`.env` של השרת. אפילו רווח נוסף ישבור. |
+| `Message.list()` מחזיר 401 / רשימה ריקה | Base44 entities הם **owner-only ברירת מחדל**. ב-prompt דרשתם RLS ציבורי — אבל וודאו שזה אכן נכנס. אחרת — תקראו דרך פונקציה עם asServiceRole. |
+| הודעות יוצאות לא נשמרות ב-DB | אותו עניין של RLS. הפונקציה `sendMessage` חייבת להשתמש ב-`asServiceRole.entities.Message.create()`. |
+
+### 8.7 — אופציה למפתחים: CLI במקום Builder
+
+אם אתם מעדיפים לערוך קוד מקומית במקום צ'אט עם AI:
+
+```bash
 npm install -g base44
 mkdir wa-chat && cd wa-chat
 npx base44 login                                # פותח דפדפן לאישור
 npx base44 create wa-chat -p . -t backend-and-client
 ```
 
-זה יוצר פרויקט Vite + React + Tailwind עם תיקיית `base44/` שמכילה את הגדרות
-ה-entities, functions, ו-config.
-
-### 8.2 — הזרקת סודות
+ואז יוצרים את הקבצים ב-`base44/entities/`, `base44/functions/`, ו-`src/` ידנית — או מבקשים מ-Claude Code/Cursor לעשות זאת. אחרי שינוי:
 
 ```bash
-npx base44 secrets set \
-  WA_HUB_URL=https://your-tunnel.trycloudflare.com \
-  WA_HUB_TOKEN=<HUB_TOKEN_from_env> \
-  WA_HUB_SECRET=<WEBHOOK_SECRET_from_env> \
-  CHAT_NUMBER=972585802298
+npx base44 secrets set WA_HUB_URL=... WA_HUB_TOKEN=... WA_HUB_SECRET=... CHAT_NUMBER=...
+npm run build
+npx base44 deploy -y
 ```
 
-הסודות זמינים בתוך פונקציות backend דרך `Deno.env.get(...)`.
+הקוד המלא של אפליקציה דומה (TypeScript Deno, React) נמצא ב-[`examples/base44/` ברפו](https://github.com/Noam13-w/wa-hub-demo/tree/main/examples/base44).
 
-### 8.3 — Entity להודעות (זהירות מ-RLS!)
+---
 
-```jsonc
-// base44/entities/message.jsonc
-{
-  "name": "Message",
-  "type": "object",
-  "properties": {
-    "direction":   { "type": "string", "enum": ["incoming", "outgoing"] },
-    "text":        { "type": "string" },
-    "ts":          { "type": "number" },
-    "external_id": { "type": "string" },
-    "chat_number": { "type": "string" }
-  },
-  "required": ["direction", "text", "ts", "chat_number"],
-  "rls": {
-    "create": true,
-    "read":   true,
-    "update": true,
-    "delete": true
-  }
-}
+## שלב 8.5 — שליחה בטוחה: מניעת חסימה מ-WhatsApp
+
+WhatsApp לא אוהבים שולחים אוטומטיים. הם משתמשים באלגוריתמים שמזהים התנהגות
+לא-אנושית ו**חוסמים מספרים**. ספקים מסחריים כמו Green-API משקיעים הרבה בהגנה
+מפני זה (השהיות, typing simulation, rate-limit-per-recipient וכו').
+
+**ה-Hub הזה לא כולל את ההגנות האלה מהקופסה.** אבל זה לא בעיה — אפשר ליישם אותן
+בקוד שקורא ל-API שלנו. הנה המתכונים החשובים:
+
+### 8.5.1 — השהייה רנדומלית בין הודעות
+
+**הסכנה:** שליחת 100 הודעות בלי הפסקה תזוהה בוודאות כספאם.
+**הפתרון:** המתן 3-15 שניות רנדומליות בין הודעות.
+
+```python
+import random, time, requests
+
+def send_safe(to, text):
+    requests.post(f"{HUB_URL}/api/messages/send/text",
+        headers={"Authorization": f"Bearer {HUB_TOKEN}"},
+        json={"to": to, "text": text})
+    # רנדומלי 3-15 שניות — לחיקוי קצב כתיבה אנושי
+    time.sleep(random.uniform(3, 15))
+
+for recipient, message in customers:
+    send_safe(recipient, message)
 ```
 
-> **גיצ'ה #1 — RLS:** Base44 entities **ברירת מחדל owner-only**. אם תשמיט את
-> בלוק `rls`, רק המשתמש שיצר את הרשומה יוכל לראות אותה. במקרה של webhook
-> (אנונימי לחלוטין) — `Message.create()` יעבוד דרך `asServiceRole`, אבל
-> `Message.list()` מהפרונט (גם של אדמין מחובר) יחזיר 401.
->
-> הפתרון: או להגדיר `"rls": { read: true, ... }` כמו למעלה, או להעטוף את כל
-> קריאות ה-entity בפונקציות עם service role.
+### 8.5.2 — סימולציית הקלדה (typing indicator)
 
-### 8.4 — פונקציה: שליחת הודעה
+לפני שליחת הודעה ארוכה, הראו "typing..." במשך כמה שניות. זה גורם להודעה
+להיראות אנושית. ה-Hub שלנו לא חושף endpoint לטייפינג ישירות (כי baileys עושה
+את זה אוטומטית בעבודה רגילה), אבל אפשר להוסיף השהייה בצד שלך:
 
-```typescript
-// base44/functions/send-message/index.ts
-import { createClientFromRequest } from "npm:@base44/sdk";
-
-const HUB_URL     = Deno.env.get("WA_HUB_URL")!;
-const HUB_TOKEN   = Deno.env.get("WA_HUB_TOKEN")!;
-const CHAT_NUMBER = Deno.env.get("CHAT_NUMBER")!;
-
-Deno.serve(async (req) => {
-  try {
-    const { text } = await req.json();
-    if (!text?.trim()) {
-      return Response.json({ error: "text_required" }, { status: 400 });
-    }
-
-    const r = await fetch(`${HUB_URL}/api/messages/send/text`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${HUB_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ to: CHAT_NUMBER, text }),
-    });
-
-    const data = await r.json();
-    if (!r.ok) return Response.json({ error: "hub_error", details: data }, { status: 502 });
-
-    // Mirror locally so the UI shows the sent message immediately.
-    const base44 = createClientFromRequest(req);
-    await base44.asServiceRole.entities.Message.create({
-      direction:   "outgoing",
-      text,
-      ts:          Date.now(),
-      external_id: data.id,
-      chat_number: CHAT_NUMBER,
-    });
-
-    return Response.json({ ok: true, id: data.id });
-  } catch (err) {
-    return Response.json({ error: "internal", message: String(err) }, { status: 500 });
-  }
-});
+```python
+# פסי המתנה כאילו אתה מקליד — ~1 תו ל-100ms
+delay = min(len(text) * 0.1, 8)  # מקסימום 8 שניות
+time.sleep(delay)
+send_safe(to, text)
 ```
 
-### 8.5 — פונקציה: webhook מאומת חתימה
+### 8.5.3 — Rate limit לפי נמען
 
-```typescript
-// base44/functions/whatsapp-webhook/index.ts
-import { createClientFromRequest } from "npm:@base44/sdk";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { Buffer } from "node:buffer";
+לעולם אל תשלחו ליותר מ-1 הודעה ל-30 שניות **לאותו מספר**, ולא יותר מ-20-30
+הודעות ביום סך-הכל. שמרו טבלה של "מתי שלחתי לאחרון לכל מספר":
 
-const WEBHOOK_SECRET = Deno.env.get("WA_HUB_SECRET")!;
-const CHAT_NUMBER    = Deno.env.get("CHAT_NUMBER")!;
+```python
+last_sent = {}  # number -> timestamp
 
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-
-  const body = await req.text();                              // bytes — must not parse first
-  const given = req.headers.get("x-hub-signature") || "";
-  const want  = "sha256=" + createHmac("sha256", WEBHOOK_SECRET)
-                              .update(body).digest("hex");
-
-  // Constant-time compare — important to prevent timing attacks.
-  if (given.length !== want.length) return new Response("bad sig", { status: 401 });
-  if (!timingSafeEqual(Buffer.from(given), Buffer.from(want))) {
-    return new Response("bad sig", { status: 401 });
-  }
-
-  const event = JSON.parse(body);
-
-  if (event.event === "message.incoming" && event.data?.type === "text") {
-    const base44 = createClientFromRequest(req);
-    await base44.asServiceRole.entities.Message.create({
-      direction:   "incoming",
-      text:        event.data.text || "",
-      ts:          event.data.timestamp || Date.now(),
-      external_id: event.data.id || "",
-      chat_number: CHAT_NUMBER,
-    });
-  }
-
-  return new Response("ok");
-});
+def send_safe_per_user(to, text):
+    now = time.time()
+    if to in last_sent and now - last_sent[to] < 30:
+        wait = 30 - (now - last_sent[to])
+        time.sleep(wait)
+    send_safe(to, text)
+    last_sent[to] = time.time()
 ```
 
-> **למה `node:crypto` ולא Web Crypto?** Base44 functions רצים על Deno עם
-> Node compatibility layer. `node:crypto` נתמך מלא ועובד בלי polyfill.
->
-> אם אתם פורסים על סביבה אחרת (Cloudflare Workers, Vercel Edge) שלא תומכת
-> ב-Node modules, השתמשו ב-Web Crypto:
->
-> ```typescript
-> const enc = new TextEncoder();
-> const key = await crypto.subtle.importKey(
->   "raw", enc.encode(SECRET),
->   { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-> );
-> const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
-> const hex = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("");
-> const want = "sha256=" + hex;
-> ```
+### 8.5.4 — Warmup למספרים חדשים
 
-### 8.6 — פונקציה: שליפת הודעות (לפרונט)
+**מספר שזה עתה נוצר/חובר** לא מורגל לתעבורה. שלחו ממנו פחות הודעות בימים
+הראשונים:
 
-```typescript
-// base44/functions/list-messages/index.ts
-import { createClientFromRequest } from "npm:@base44/sdk";
+| ימים מההתחברות | מקסימום הודעות יוצאות ביום |
+|---|---|
+| 1-3 | 10 |
+| 4-7 | 30 |
+| 8-14 | 100 |
+| 15+ | 300+ |
 
-const CHAT_NUMBER = Deno.env.get("CHAT_NUMBER")!;
+### 8.5.5 — מתי להפסיק
 
-Deno.serve(async (req) => {
-  try {
-    const base44 = createClientFromRequest(req);
-    const all = await base44.asServiceRole.entities.Message.list("ts", 200);
-    const filtered = (all || []).filter((m: any) => m.chat_number === CHAT_NUMBER);
-    return Response.json({ messages: filtered });
-  } catch (err) {
-    return Response.json({ error: "internal", message: String(err) }, { status: 500 });
-  }
-});
-```
+WhatsApp נותנים אזהרות לפני חסימה — ההודעות שלך **לא מתקבלות עם וי כפול ירוק**
+אלא נשארות עם וי בודד שעות. אם זה קורה — **תפסיקו לשלוח מיד**, חכו 24 שעות,
+ושלחו במקצב נמוך משמעותית.
 
-### 8.7 — קוד פרונט: אבל יש wrapper
+### 8.5.6 — סיכום: כללי אצבע
 
-ב-Frontend, כשקוראים לפונקציה — חשוב לדעת:
+| כלל | למה |
+|---|---|
+| **אל תשלחו ל-100 מספרים תוך 10 דקות** | זיהוי ספאם מיידי |
+| **השאירו לפחות 30 שניות בין הודעות לאותו מספר** | אנושי |
+| **אל תשלחו לאנשים שלא ביקשו לקבל הודעות** | דיווחי ספאם מהמשתמשים — הסיבה #1 לחסימה |
+| **לא יותר מ-300 הודעות יוצאות ביום ממספר 1+ ימים** | מגבלה לא רשמית של WhatsApp |
+| **אם וי בודד נשאר שעות — עצור!** | סימן אזהרה לפני חסימה |
 
-```javascript
-// ✅ נכון
-const r = await base44.functions.invoke("list-messages", {});
-setMessages(r?.data?.messages || []);
-
-// ❌ לא נכון — לא יעבוד
-const r = await base44.functions.invoke("list-messages", {});
-setMessages(r?.messages || []);
-```
-
-> **גיצ'ה #2 — Axios wrapper:** `base44.functions.invoke()` מחזיר אובייקט
-> בסגנון axios: `{ data, status, headers, ... }`. הקריאה האמיתית למה
-> שהפונקציה החזירה היא דרך `.data`. אם אתם רואים 200 OK בנטוורק והקוד
-> מתנהג כאילו הוא נכשל — זה כנראה זה.
-
-### 8.8 — רישום ה-webhook ב-Hub אחרי פריסה
-
-אחרי `npx base44 deploy -y`, הפרויקט שלכם מקבל URL ציבורי. רשמו אותו ב-Hub:
-
-```bash
-TOKEN=<HUB_TOKEN>
-WEBHOOK="https://wa-chat-XXXXXXXX.base44.app/api/functions/whatsapp-webhook"
-
-curl -X PUT -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d "{\"url\":\"$WEBHOOK\",\"events\":[\"message.incoming\"]}" \
-     https://your-tunnel.trycloudflare.com/api/instance/webhook
-```
-
-> **גיצ'ה #3 — Webhook לא persistent:** הקריאה ל-`PUT /api/instance/webhook`
-> שומרת את ה-URL ב-**זיכרון בלבד**. בכל restart של ה-Hub (תקלה, עדכון, reboot)
-> ה-URL נמחק וה-webhook יפסיק לעבוד עד שתרשמו שוב.
->
-> **הפתרון:** הזריקו את ה-URL ל-`.env` של ה-Hub כדי שיטען בכל boot:
->
-> ```bash
-> sed -i "s|^WEBHOOK_URL=.*|WEBHOOK_URL=$WEBHOOK|" /srv/wa-hub-demo/.env
-> sed -i "s|^WEBHOOK_EVENTS=.*|WEBHOOK_EVENTS=message.incoming|" /srv/wa-hub-demo/.env
-> systemctl restart wa-hub
-> ```
+> **רוצים מימוש בתוך ה-Hub?** זה ב-roadmap (`docs/ROADMAP.md` ברפו). תרגישו
+> חופשי לפתוח PR או issue ב-GitHub. בינתיים — הקוד שלך הוא המקום הנכון להוסיף
+> את ההגנות (יותר גמיש לתפור לפי הצורך).
 
 ---
 
@@ -1043,7 +1364,7 @@ Baileys שומר היסטוריית chats ב-RAM. ב-instance עם מעט תעב
 
 ---
 
-## גיצ'ות מהשטח — דברים שלא תמצאו בתיעוד
+## טיפים מהשטח — דברים שלא תמצאו בתיעוד
 
 ### #1 — Baileys 7 ומספרי LID
 
@@ -1184,6 +1505,29 @@ journalctl -u cloudflared-wahub -n 50 --no-pager
 </details>
 
 <details>
+<summary><b>השירות נופל ב-<code>core-dump</code> · <code>status=31/SYS</code></b></summary>
+
+זה SIGSYS — systemd seccomp filter חוסם syscall ש-Node 20+ צריך (`io_uring`,
+`clone3`). לוג יראה משהו כמו:
+
+```
+wa-hub.service: Main process exited, code=dumped, status=31/SYS
+wa-hub.service: Failed with result 'core-dump'.
+```
+
+**תיקון:** הסירו את ה-SystemCallFilter דרך drop-in:
+
+```bash
+mkdir -p /etc/systemd/system/wa-hub.service.d
+printf '[Service]\nSystemCallFilter=\n' > /etc/systemd/system/wa-hub.service.d/syscall-fix.conf
+systemctl daemon-reload && systemctl restart wa-hub.service
+```
+
+שאר ההגנות (`NoNewPrivileges`, `ProtectSystem=strict` וכו') נשארות בתוקף.
+
+</details>
+
+<details>
 <summary><b>Webhook לא נכנס ל-Base44 (200 OK בלוג של Hub, אבל ה-entity ריק)</b></summary>
 
 1. ראו את הלוגים של הפונקציה: `npx base44 logs --function whatsapp-webhook --limit 20`
@@ -1195,7 +1539,7 @@ journalctl -u cloudflared-wahub -n 50 --no-pager
 <details>
 <summary><b>הודעות נכנסות יש, אבל <code>fromNumber</code> הוא LID</b></summary>
 
-ראו "גיצ'ה #1" למעלה. השדה `fromLid: true` מאותת שזה LID. אם רוצים את מספר
+ראו "טיפ #1" למעלה. השדה `fromLid: true` מאותת שזה LID. אם רוצים את מספר
 הטלפון האמיתי — אין דרך, WhatsApp לא חושפים את זה. תזהו לקוחות לפי
 `chat` (ה-JID של השיחה) שיציב לאורך זמן.
 
@@ -1235,8 +1579,8 @@ A: כן. WhatsApp לא אוסר על Linked Devices לא-רשמיים, אבל ש
 לחסום מספרים שמתנהגים כספאם. שלחו רק להודעות שביקשו מכם.
 
 **Q: השרת יעמוד בעומס?**
-A: CAX11 (4GB RAM) טוב לעד ~50 הודעות לשנייה. אם אתם מצפים ליותר — שדרגו ל-CAX21
-(8GB, €7.59), או הריצו מספר instances.
+A: CX23 / CAX11 (4GB RAM) טוב לעד ~50 הודעות לשנייה. אם אתם מצפים ליותר — שדרגו ל-CX33 / CAX21
+(8GB), או הריצו מספר instances.
 
 **Q: מה קורה אם Hetzner נופל?**
 A: ב-12 חודשים אחרונים — uptime ~99.95%. לפרודקשן רצינית שקלו multi-region או
