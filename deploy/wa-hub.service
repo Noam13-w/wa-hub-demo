@@ -1,0 +1,49 @@
+[Unit]
+Description=wa-hub-demo — self-hosted WhatsApp HTTP API (Baileys)
+Documentation=https://github.com/noamnissan/wa-hub-demo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wahub
+Group=wahub
+WorkingDirectory=/srv/wa-hub-demo
+EnvironmentFile=/srv/wa-hub-demo/.env
+ExecStart=/usr/bin/node /srv/wa-hub-demo/src/index.js
+Restart=always
+RestartSec=5
+SyslogIdentifier=wa-hub-demo
+StandardOutput=journal
+StandardError=journal
+
+# ─── Hardening ────────────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadWritePaths=/srv/wa-hub-demo/data
+
+# Resource caps — adjust if you expect heavy traffic.
+MemoryMax=512M
+TasksMax=256
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>בניית WhatsApp Hub עצמאי · המדריך המלא</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@200;300;400;500;700;800;900&family=Rubik:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Frank+Ruhl+Libre:wght@700;900&display=swap" rel="stylesheet" />
+
+  <!-- Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* ═══ THEME ═════════════════════════════════════════════════════════ */
+    :root {
+      /* Surfaces */
+      --bg:           #06100c;
+      --bg-2:         #0c1a14;
+      --bg-card:      rgba(255, 255, 255, 0.035);
+      --bg-elev:      rgba(255, 255, 255, 0.06);
+      --code-bg:      #07120e;
+
+      /* Text */
+      --fg:           #eef4f0;
+      --fg-soft:      #c8d3cd;
+      --muted:        #7c8e85;
+      --dim:          rgba(124, 142, 133, 0.6);
+
+      /* Brand */
+      --green:        #25d366;
+      --green-2:      #00a884;
+      --green-deep:   #005c4b;
+      --teal-glow:    rgba(0, 168, 132, 0.45);
+
+      /* Accents */
+      --gold:         #f5d76e;
+      --rose:         #ff6b8a;
+      --sky:          #6ec1ff;
+
+      /* States */
+      --warn:         #ffbc38;
+      --danger:       #f15c6d;
+      --ok:           #25d366;
+
+      /* Lines & borders */
+      --hair:         rgba(200, 211, 205, 0.10);
+      --hair-2:       rgba(200, 211, 205, 0.18);
+
+      /* Shadows */
+      --shadow-sm:    0 4px 14px rgba(0, 0, 0, 0.25);
+      --shadow-md:    0 10px 35px rgba(0, 0, 0, 0.35);
+      --shadow-glow:  0 0 40px var(--teal-glow);
+    }
+
+    /* ═══ BASE ══════════════════════════════════════════════════════════ */
+    html, body { background: var(--bg); }
+
+    .reveal {
+      font-family: 'Heebo', 'Rubik', system-ui, -apple-system, sans-serif;
+      font-weight: 400;
+      color: var(--fg);
+      background:
+        radial-gradient(at  8%  10%, rgba(37, 211, 102, 0.06) 0px, transparent 50%),
+        radial-gradient(at 92%  85%, rgba(0,  92,  75, 0.10) 0px, transparent 50%),
+        radial-gradient(at 50%  50%, rgba(110, 193, 255, 0.03) 0px, transparent 60%),
+        var(--bg);
+      letter-spacing: -0.005em;
+    }
+
+    /* Subtle grid texture */
+    .reveal::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+      background-size: 56px 56px;
+      z-index: 0;
+    }
+
+    .reveal .slides { text-align: right; z-index: 1; position: relative; }
+    .reveal section { padding: 0 1.4em; }
+    .reveal section:focus { outline: none; }
+
+    /* ═══ TYPOGRAPHY ════════════════════════════════════════════════════ */
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4, .reveal h5 {
+      font-family: 'Heebo', sans-serif;
+      text-transform: none;
+      letter-spacing: -0.028em;
+      line-height: 1.07;
+      color: var(--fg);
+      margin: 0 0 0.55em 0;
+    }
+    .reveal h1 { font-size: 3.5em;  font-weight: 900; }
+    .reveal h2 {
+      font-size: 2.15em; font-weight: 800;
+      margin-bottom: 0.8em;
+      display: flex; align-items: center; gap: 0.55em;
+      flex-direction: row-reverse;
+    }
+    .reveal h2 .lucide {
+      width: 1em; height: 1em; stroke-width: 2.2;
+      color: var(--green-2);
+      filter: drop-shadow(0 0 14px var(--teal-glow));
+      flex-shrink: 0;
+    }
+    .reveal h3 {
+      font-size: 1.35em; font-weight: 700;
+      color: var(--green);
+      letter-spacing: -0.015em;
+    }
+    .reveal h4 {
+      font-size: 1.08em; font-weight: 700;
+      color: var(--fg);
+      margin-bottom: 0.25em;
+    }
+
+    .reveal p, .reveal li {
+      font-size: 1em;
+      line-height: 1.6;
+      color: var(--fg-soft);
+      font-weight: 300;
+    }
+    .reveal small { color: var(--muted); font-size: 0.65em; }
+    .reveal strong { color: var(--fg); font-weight: 700; }
+    .reveal em       { font-style: normal; color: var(--green); font-weight: 700; }
+
+    .accent { color: var(--green); }
+    .muted  { color: var(--muted); }
+    .warn   { color: var(--warn); }
+    .danger { color: var(--danger); }
+    .gold   { color: var(--gold); }
+
+    /* Hairline rule */
+    .rule {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--hair-2), transparent);
+      margin: 1em 0;
+    }
+
+    /* ═══ CODE ══════════════════════════════════════════════════════════ */
+    .reveal code {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      background: var(--code-bg);
+      padding: 0.13em 0.46em;
+      border-radius: 6px;
+      font-size: 0.85em;
+      border: 1px solid var(--hair-2);
+      direction: ltr; display: inline-block;
+      color: var(--green);
+    }
+    .reveal pre {
+      background: var(--code-bg);
+      border-radius: 14px;
+      padding: 1.4em 1.7em;
+      box-shadow: var(--shadow-md), inset 0 0 0 1px var(--hair-2);
+      direction: ltr; text-align: left;
+      font-size: 0.6em;
+      width: 100%; margin: 0.8em 0 0.4em 0;
+      position: relative;
+    }
+    .reveal pre::before {
+      content: '';
+      position: absolute;
+      top: 14px; left: 16px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--rose);
+      box-shadow:
+        18px 0  0  var(--gold),
+        36px 0  0  var(--green);
+    }
+    .reveal pre code {
+      background: none; border: none; padding: 0; line-height: 1.6;
+      color: var(--fg-soft);
+      display: block; margin-top: 1.2em;
+    }
+
+    /* ═══ LAYOUT ════════════════════════════════════════════════════════ */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4em; align-items: start; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1em; align-items: start; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.95em; align-items: start; }
+    .stack > * + * { margin-top: 0.9em; }
+
+    /* ═══ CARD ══════════════════════════════════════════════════════════ */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(14px) saturate(160%);
+      -webkit-backdrop-filter: blur(14px) saturate(160%);
+      border: 1px solid var(--hair-2);
+      border-radius: 18px;
+      padding: 1.3em 1.45em;
+      position: relative;
+      transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.25s, box-shadow 0.25s;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, rgba(37,211,102,0.04), transparent 60%);
+      pointer-events: none;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(37, 211, 102, 0.35);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(37, 211, 102, 0.18);
+    }
+    .card h3, .card h4 { margin-bottom: 0.35em; }
+    .card p { margin: 0; font-size: 0.88em; line-height: 1.55; }
+
+    /* Card icon (lucide) */
+    .card-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px; height: 42px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, rgba(37,211,102,0.13), rgba(0,92,75,0.06));
+      border: 1px solid rgba(37, 211, 102, 0.22);
+      margin-bottom: 0.85em;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .card-icon .lucide {
+      width: 22px; height: 22px;
+      color: var(--green);
+      stroke-width: 2;
+      filter: drop-shadow(0 0 8px var(--teal-glow));
+    }
+    .card.x .card-icon {
+      background: linear-gradient(135deg, rgba(241,92,109,0.13), rgba(241,92,109,0.03));
+      border-color: rgba(241,92,109,0.25);
+    }
+    .card.x .card-icon .lucide { color: var(--danger); filter: drop-shadow(0 0 8px rgba(241,92,109,0.4)); }
+
+    /* ═══ STEP BADGE ═══════════════════════════════════════════════════ */
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.6em; height: 2.6em;
+      border-radius: 13px;
+      background: linear-gradient(135deg, var(--green), var(--green-deep));
+      color: #022016;
+      font-weight: 900;
+      font-size: 1em;
+      margin-left: 0.7em;
+      box-shadow: 0 10px 28px rgba(0, 168, 132, 0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+      letter-spacing: -0.04em;
+    }
+
+    /* ═══ PILL ═════════════════════════════════════════════════════════ */
+    .pill {
+      display: inline-flex;
+      align-items: center; gap: 0.4em;
+      padding: 0.36em 0.95em;
+      border-radius: 999px;
+      font-size: 0.72em;
+      font-weight: 600;
+      background: rgba(37, 211, 102, 0.10);
+      color: var(--green);
+      border: 1px solid rgba(37, 211, 102, 0.32);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .pill .lucide { width: 12px; height: 12px; }
+
+    /* ═══ BIG NUMBER ═══════════════════════════════════════════════════ */
+    .big-number {
+      font-size: 5.5em;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.05em;
+      background: linear-gradient(180deg, var(--green) 0%, var(--green-deep) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 8px 24px var(--teal-glow));
+    }
+    .big-number .unit {
+      font-size: 0.26em;
+      color: var(--muted);
+      font-weight: 400;
+      -webkit-text-fill-color: var(--muted);
+    }
+
+    /* ═══ LISTS ════════════════════════════════════════════════════════ */
+    .checks { list-style: none; padding: 0; margin: 0; }
+    .checks li {
+      padding: 0.35em 0;
+      padding-right: 1.85em;
+      position: relative;
+      font-size: 0.95em;
+      line-height: 1.6;
+    }
+    .checks li::before {
+      content: '';
+      position: absolute;
+      right: 0; top: 0.6em;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: rgba(37, 211, 102, 0.18);
+      box-shadow: inset 0 0 0 2px var(--green);
+    }
+    .checks li::after {
+      content: '';
+      position: absolute;
+      right: 4.5px; top: 0.95em;
+      width: 7px; height: 4px;
+      border-left: 2px solid var(--green);
+      border-bottom: 2px solid var(--green);
+      transform: rotate(-45deg);
+    }
+    .x-list li::before {
+      background: rgba(241, 92, 109, 0.18);
+      box-shadow: inset 0 0 0 2px var(--danger);
+    }
+    .x-list li::after {
+      content: '';
+      width: 8px; height: 2px;
+      background: var(--danger);
+      border: none;
+      transform: rotate(45deg);
+      right: 4px; top: 1em;
+      box-shadow: 0 0 0 2px var(--danger) inset;
+    }
+
+    /* ═══ TABLES ═══════════════════════════════════════════════════════ */
+    .compare {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 0.78em;
+      border: 1px solid var(--hair-2);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--bg-card);
+      backdrop-filter: blur(10px);
+    }
+    .compare th, .compare td {
+      text-align: right;
+      padding: 0.95em 1.1em;
+      border-bottom: 1px solid var(--hair);
+    }
+    .compare th {
+      background: var(--bg-2);
+      color: var(--green);
+      font-weight: 700;
+      font-size: 0.85em;
+      letter-spacing: 0.02em;
+    }
+    .compare tr:last-child td { border-bottom: none; }
+    .compare .ours {
+      background: linear-gradient(90deg, rgba(0,168,132,0.10), rgba(0,168,132,0.02));
+      color: var(--fg);
+      font-weight: 600;
+      border-right: 2px solid var(--green);
+    }
+
+    /* ═══ ARCH DIAGRAM ═════════════════════════════════════════════════ */
+    .arch {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.66em;
+      direction: ltr;
+      text-align: left;
+      background: var(--code-bg);
+      padding: 1.7em 1.9em;
+      border-radius: 16px;
+      border: 1px solid var(--hair-2);
+      box-shadow: var(--shadow-md);
+      white-space: pre;
+      line-height: 1.6;
+      color: var(--fg-soft);
+      overflow-x: auto;
+    }
+    .arch .hl  { color: var(--green); font-weight: 700; }
+    .arch .dim { color: var(--muted); }
+    .arch .key { color: var(--gold); }
+
+    /* ═══ TITLE SLIDE ══════════════════════════════════════════════════ */
+    .title-slide {
+      background:
+        radial-gradient(ellipse at center, rgba(0, 92, 75, 0.45) 0%, var(--bg) 65%),
+        var(--bg);
+      min-height: 100vh;
+      display: flex !important;
+      flex-direction: column;
+      align-items: center !important;
+      justify-content: center;
+      text-align: center !important;
+      padding: 2em !important;
+      position: relative;
+    }
+    .title-slide::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(37, 211, 102, 0.08), transparent 35%),
+        radial-gradient(circle at 80% 70%, rgba(110, 193, 255, 0.06), transparent 35%);
+      pointer-events: none;
+    }
+    .title-slide > * { position: relative; z-index: 1; }
+    .title-slide h1 {
+      font-size: 4.2em;
+      background: linear-gradient(120deg, #ffffff 20%, var(--green) 90%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.25em;
+      filter: drop-shadow(0 4px 30px rgba(37, 211, 102, 0.18));
+    }
+    .title-slide .subtitle {
+      font-size: 1.18em;
+      color: var(--fg-soft);
+      max-width: 800px;
+      font-weight: 300;
+      margin-bottom: 2em;
+      line-height: 1.6;
+    }
+    .title-slide .meta {
+      color: var(--muted);
+      font-size: 0.78em;
+      margin-top: 3.2em;
+      letter-spacing: 0.04em;
+      display: flex; align-items: center; gap: 1.6em;
+      flex-direction: row-reverse;
+    }
+    .title-slide .meta .dot {
+      width: 4px; height: 4px;
+      background: var(--muted);
+      border-radius: 50%;
+    }
+
+    /* ═══ REPO BOX ═════════════════════════════════════════════════════ */
+    .repo-box {
+      background: var(--bg-card);
+      border: 1px solid rgba(37, 211, 102, 0.28);
+      border-radius: 16px;
+      padding: 1.7em 2.2em;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4em;
+      direction: ltr;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 24px 50px rgba(0,0,0,0.35), 0 0 0 1px rgba(37,211,102,0.15) inset;
+    }
+    .repo-box .label {
+      font-size: 0.72em;
+      color: var(--muted);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .repo-box code {
+      font-size: 1.18em;
+      background: none;
+      border: none;
+      color: var(--green);
+      font-weight: 600;
+      padding: 0;
+    }
+
+    /* ═══ FOOTER + CHROME ═════════════════════════════════════════════ */
+    .footer-mark {
+      position: fixed;
+      bottom: 0.9em;
+      left: 1.4em;
+      color: var(--muted);
+      font-size: 0.62em;
+      z-index: 100;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.08em;
+      opacity: 0.6;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+    }
+    .footer-mark .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50%      { opacity: 1; }
+    }
+
+    .reveal .progress { color: var(--green); height: 3px; }
+    .reveal .slide-number {
+      background: transparent;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7em;
+      opacity: 0.6;
+    }
+    .reveal .controls { color: var(--green); opacity: 0.6; }
+
+    /* ═══ STAGE HEADER (numbered) ═════════════════════════════════════ */
+    .stage-header {
+      display: flex; align-items: center; gap: 0.7em;
+      margin-bottom: 0.8em;
+      flex-direction: row-reverse;
+    }
+    .stage-header .step-badge { margin: 0; }
+    .stage-header h2 { margin: 0; padding: 0; }
+
+    /* ═══ TWO-COL VARIANT ═════════════════════════════════════════════ */
+    .split-rev { display: grid; grid-template-columns: 1.05fr 1fr; gap: 1.6em; align-items: center; }
+
+    /* ═══ FANCY KICKER (small label above headings) ═══════════════════ */
+    .kicker {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65em;
+      letter-spacing: 0.22em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.7em;
+      padding-right: 1.2em;
+      position: relative;
+    }
+    .kicker::before {
+      content: '';
+      position: absolute;
+      right: 0; top: 50%;
+      width: 0.6em; height: 1px;
+      background: var(--green);
+    }
+
+    /* ═══ STAT BLOCK ═══════════════════════════════════════════════════ */
+    .stat {
+      text-align: center;
+      padding: 1em;
+    }
+    .stat .val {
+      font-size: 2.4em;
+      font-weight: 900;
+      color: var(--green);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .stat .label {
+      font-size: 0.78em;
+      color: var(--muted);
+      margin-top: 0.45em;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    /* ═══ QUOTE / CALLOUT ═════════════════════════════════════════════ */
+    .callout {
+      background: linear-gradient(135deg, rgba(37,211,102,0.06), rgba(0,92,75,0.02));
+      border-right: 3px solid var(--green);
+      padding: 1em 1.3em;
+      border-radius: 8px;
+      margin: 1em 0;
+      font-size: 0.95em;
+    }
+
+    /* ═══ ICON ROW (inline icon list) ═════════════════════════════════ */
+    .icon-row {
+      display: flex; align-items: center; gap: 0.5em;
+      flex-direction: row-reverse;
+    }
+    .icon-row .lucide {
+      width: 18px; height: 18px;
+      color: var(--green);
+      flex-shrink: 0;
+    }
+
+    /* ═══ TRANSITIONS ═════════════════════════════════════════════════ */
+    .reveal .slides section.present { animation: slideIn 0.4s ease-out; }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="reveal">
+  <!-- Footer mark -->
+  <div class="footer-mark">
+    <span class="dot"></span>
+    <span>github.com/noamnissan/wa-hub-demo</span>
+  </div>
+
+  <div class="slides">
+
+    <!-- ═══ 1. TITLE ═════════════════════════════════════════════ -->
+    <section class="title-slide">
+      <div class="pill"><i data-lucide="sparkles"></i>WEBINAR · 2026</div>
+      <h1>בניית WhatsApp Hub עצמאי</h1>
+      <p class="subtitle">איך לבנות API מקצועי ל-WhatsApp על שרת שלך,<br/>בתשע אבני דרך, תוך 45 דקות.</p>
+      <div class="meta">
+        <span>noamnissan10@gmail.com</span>
+        <span class="dot"></span>
+        <span>נעם ניסן</span>
+      </div>
+    </section>
+
+    <!-- ═══ 2. WHY ═══════════════════════════════════════════════ -->
+    <section>
+      <span class="kicker">Why we're here</span>
+      <h2><i data-lucide="dollar-sign"></i>למה אנחנו פה?</h2>
+      <div class="grid-2">
+        <div class="card x">
+          <div class="card-icon"><i data-lucide="credit-card"></i></div>
+          <h3 class="danger">משתמש ב-Green-API</h3>
+          <ul class="checks x-list" style="margin-top: 0.7em">
+            <li><strong class="danger">$20–$200+</strong> בחודש</li>
+            <li>תשלום לפי הודעה</li>
+            <li>ההודעות עוברות דרכם</li>
+            <li>rate-limit שלהם — לא שלך</li>
+            <li>אם הם נופלים — אתה נופל</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="server"></i></div>
+          <h3>מארח בעצמך</h3>
+          <ul class="checks" style="margin-top: 0.7em">
+            <li><strong class="accent">€3.79</strong> בחודש, קבוע</li>
+            <li>ללא הגבלת הודעות</li>
+            <li>ההודעות שלך → השרת שלך</li>
+            <li>אתה קובע את ה-rate-limit</li>
+            <li>קוד פתוח (MIT) לעולמים</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout" style="margin-top: 1.2em;">
+        <strong>ה-Trade-off:</strong> אתה אחראי על Uptime ועדכוני אבטחה. בשביל זה אנחנו פה.
+      </div>
+    </section>
+
+    <!-- ═══ 3. WHATSAPP WEB PROTOCOL ═════════════════════════════ -->
+    <section>
+      <span class="kicker">The protocol</span>
+      <h2><i data-lucide="link-2"></i>איך WhatsApp Web עובד?</h2>
+      <p style="margin-bottom: 1em;">הטלפון שלך הוא <em>המאסטר</em>. כל מכשיר אחר הוא Linked Device.</p>
+      <div class="arch"><span class="dim">📱</span> <span class="hl">Your phone</span>   <span class="dim">— master, holds the keys</span>
+   │
+   │  <span class="dim">◄── pairing handshake via QR</span>
+   │
+   ▼
+🔗 Linked Device #1   <span class="dim">WhatsApp Web (Chrome)</span>
+🔗 Linked Device #2   <span class="dim">WhatsApp Desktop</span>
+🔗 Linked Device #3   <span class="hl">your Hub (Baileys)</span>   <span class="dim">← we're building this</span></div>
+      <p style="margin-top: 1em; color: var(--muted); font-size: 0.9em;">
+        כל Linked Device מקבל הצפנת E2E נפרדת. הטלפון מאשר אותו פעם אחת — מכאן הוא עצמאי.
+      </p>
+    </section>
+
+    <!-- ═══ 4. BAILEYS ═══════════════════════════════════════════ -->
+    <section>
+      <span class="kicker">The library</span>
+      <h2><i data-lucide="package"></i>Baileys</h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="zap"></i></div>
+          <h3>הספרייה</h3>
+          <ul class="checks" style="margin-top: 0.7em">
+            <li>JavaScript טהור, ללא דפדפן</li>
+            <li>פרוטוקול WhatsApp Web מלא</li>
+            <li>WebSocket + הצפנת Signal</li>
+            <li>עובד על כל שרת Linux</li>
+            <li>Open source · 18K+ ★ ב-GitHub</li>
+            <li>גרסה 7.x · תחזוקה אקטיבית</li>
+          </ul>
+        </div>
+        <div class="card x">
+          <div class="card-icon"><i data-lucide="x-circle"></i></div>
+          <h3 class="danger">למה לא Puppeteer / Selenium?</h3>
+          <ul class="checks x-list" style="margin-top: 0.7em">
+            <li>Chrome זולל RAM (1GB+)</li>
+            <li>שביר — ה-UI של WhatsApp משתנה</li>
+            <li>איטי מאוד</li>
+            <li>קשה לסקייל</li>
+          </ul>
+          <div class="callout" style="margin-top: 0.9em; font-size: 0.85em;">
+            <strong>Baileys:</strong> 150MB RAM · חיבור ישיר · יציב.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 5. WHY A HUB LAYER ═══════════════════════════════════ -->
+    <section>
+      <span class="kicker">The abstraction</span>
+      <h2><i data-lucide="layers"></i>למה שכבת Hub מעל Baileys?</h2>
+      <p>Baileys היא ספרייה ב-Node. אם משתמשים בה ישירות בכל פרויקט:</p>
+      <ul class="checks x-list" style="margin: 0.9em 0">
+        <li>צריך לכתוב את החיבור מחדש בכל מקום</li>
+        <li>קשה לקרוא ל-WhatsApp מ-Base44 / n8n / Python / Bubble</li>
+        <li>אין מקום אחד שמאחד אירועים נכנסים</li>
+      </ul>
+
+      <h3 style="margin-top: 1.4em;">הפתרון: שכבת HTTP פשוטה</h3>
+      <div class="grid-4" style="margin-top: 1em;">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="server"></i></div>
+          <h4>REST</h4>
+          <p>קלאסי לקריאה ושליחה</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="webhook"></i></div>
+          <h4>Webhooks</h4>
+          <p>יציאת אירועים מאומתת HMAC</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="radio"></i></div>
+          <h4>WebSocket</h4>
+          <p>real-time events</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="shield-check"></i></div>
+          <h4>Bearer + rate-limit</h4>
+          <p>אבטחה פשוטה ויעילה</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 6. ARCHITECTURE ══════════════════════════════════════ -->
+    <section>
+      <span class="kicker">The full picture</span>
+      <h2><i data-lucide="git-branch"></i>ארכיטקטורה מלאה</h2>
+      <div class="arch">                       <span class="dim">┌──────────────────┐</span>
+                       <span class="dim">│</span>  Your phone     <span class="dim">│</span>
+                       <span class="dim">│</span>  WhatsApp       <span class="dim">│</span>
+                       <span class="dim">└────────┬─────────┘</span>
+                                │ <span class="dim">E2E encrypted (pairing QR)</span>
+                                ▼
+<span class="dim">┌──────────────────────────────────────────────────────────────┐</span>
+<span class="dim">│</span>                  <span class="hl">Hetzner CAX11 · €3.79 / mo</span>                <span class="dim">│</span>
+<span class="dim">│</span>                                                              <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">┌──────────────────────────────────────────────────┐</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">│</span>  <span class="hl">wa-hub-demo (Node 20)</span>                          <span class="dim">│</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">│</span>  ├─ <span class="key">Baileys</span>     ← WhatsApp protocol             <span class="dim">│</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">│</span>  ├─ <span class="key">REST :3060</span>  ← Bearer auth, rate-limited     <span class="dim">│</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">│</span>  ├─ <span class="key">WS   :3061</span>  ← real-time events              <span class="dim">│</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">│</span>  └─ <span class="key">Webhook out</span> ← HMAC-SHA256 signed            <span class="dim">│</span>    <span class="dim">│</span>
+<span class="dim">│</span>    <span class="dim">└──────────────────────────────────────────────────┘</span>    <span class="dim">│</span>
+<span class="dim">│</span>                                                              <span class="dim">│</span>
+<span class="dim">│</span>             <span class="dim">loopback only · ufw blocks public</span>              <span class="dim">│</span>
+<span class="dim">└──────────────────────┬───────────────────────────────────────┘</span>
+                       │ <span class="dim">outbound only</span>
+                       ▼
+              <span class="dim">┌────────────────────┐</span>
+              <span class="dim">│</span> <span class="hl">Cloudflare Tunnel</span>  <span class="dim">│</span>  ← <span class="dim">public HTTPS URL</span>
+              <span class="dim">└─────────┬──────────┘</span>
+                        │
+              ┌─────────┼──────────┐
+              ▼         ▼          ▼
+           Base44    n8n / Make   Your app</div>
+    </section>
+
+    <!-- ═══ 7. THE 7-STAGE JOURNEY ═══════════════════════════════ -->
+    <section>
+      <span class="kicker">The path</span>
+      <h2><i data-lucide="route"></i>המסע · 7 אבני דרך</h2>
+      <div class="grid-4" style="margin-top: 1em">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="cloud"></i></div>
+          <h4><span class="accent">1.</span> VPS</h4>
+          <p>קונים שרת Hetzner</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="shield"></i></div>
+          <h4><span class="accent">2.</span> Harden</h4>
+          <p>SSH · ufw · fail2ban</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="code-2"></i></div>
+          <h4><span class="accent">3.</span> Code</h4>
+          <p>שכפול הרפו + npm</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="qr-code"></i></div>
+          <h4><span class="accent">4.</span> Pair</h4>
+          <p>סורקים QR מהטלפון</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="globe"></i></div>
+          <h4><span class="accent">5.</span> Expose</h4>
+          <p>Cloudflare Tunnel</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="plug"></i></div>
+          <h4><span class="accent">6.</span> Integrate</h4>
+          <p>קריאה מכל מערכת</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="lock"></i></div>
+          <h4><span class="accent">7.</span> Secure</h4>
+          <p>Token rotation + monitoring</p>
+        </div>
+        <div class="card" style="background: rgba(37,211,102,0.06); border-color: rgba(37,211,102,0.35);">
+          <div class="card-icon"><i data-lucide="rocket"></i></div>
+          <h4 class="accent">Live</h4>
+          <p>API חי ב-WhatsApp שלך</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 8. STAGE 1: BUY ══════════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">1</span><h2 style="display:inline">קונים שרת Hetzner</h2></div>
+      <div class="split-rev">
+        <div>
+          <h3 style="margin-bottom: 0.8em;">Hetzner CAX11</h3>
+          <table class="compare">
+            <tr><td><i data-lucide="cpu" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> vCPU</td><td><strong>2</strong> · Ampere ARM64</td></tr>
+            <tr><td><i data-lucide="memory-stick" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> RAM</td><td><strong>4 GB</strong></td></tr>
+            <tr><td><i data-lucide="hard-drive" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> Storage</td><td><strong>40 GB</strong> NVMe</td></tr>
+            <tr><td><i data-lucide="activity" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> Traffic</td><td><strong>20 TB</strong> / חודש</td></tr>
+            <tr><td><i data-lucide="terminal" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> OS</td><td>Ubuntu 24.04 LTS</td></tr>
+            <tr><td><i data-lucide="map-pin" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> Location</td><td>Falkenstein 🇩🇪</td></tr>
+            <tr><td><i data-lucide="zap" style="width:14px;height:14px;color:var(--green);vertical-align:middle;margin-left:6px;"></i> Ping מישראל</td><td>~60ms</td></tr>
+          </table>
+        </div>
+        <div style="text-align: center;">
+          <div class="big-number">€3.79<span class="unit">/חודש</span></div>
+          <div class="rule" style="max-width: 200px; margin: 1.4em auto;"></div>
+          <p class="muted" style="font-size: 0.9em;">AWS t4g.medium = <strong class="danger">$25</strong></p>
+          <p class="accent" style="font-size: 0.85em; margin-top: 0.4em; font-weight: 600;">חיסכון של ~85%</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 9. STAGE 2: HARDEN ═══════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">2</span><h2 style="display:inline">הקשחת השרת</h2></div>
+      <p style="margin-bottom: 0.6em;">לפני שמתקינים כלום — סוגרים את הדלתות.</p>
+<pre><code class="language-bash"># SSH — מפתחות בלבד
+sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' \
+  /etc/ssh/sshd_config && systemctl reload ssh
+
+# Firewall — רק SSH פתוח
+ufw allow 22/tcp && ufw default deny incoming && yes | ufw enable
+
+# fail2ban — חוסם IP אחרי ניסיונות כושלים
+apt-get install -y fail2ban && systemctl enable --now fail2ban
+
+# משתמש שירות (לא root!)
+useradd --system --shell /usr/sbin/nologin --home /srv/wa-hub-demo wahub</code></pre>
+      <div class="callout" style="margin-top: 1em;">
+        <strong>תוצאה:</strong> גם עם חולשה בקוד, פולש לא יכול להתחזק או לקרוא קבצי שירותים אחרים.
+      </div>
+    </section>
+
+    <!-- ═══ 10. STAGE 3: CODE ════════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">3</span><h2 style="display:inline">הקוד</h2></div>
+      <div class="grid-2">
+        <div>
+          <h3 style="display:flex;align-items:center;gap:0.5em;flex-direction:row-reverse;">
+            <i data-lucide="user" style="width:24px;height:24px;"></i>ידני
+          </h3>
+<pre><code class="language-bash">cd /srv
+sudo -u wahub git clone \
+  https://github.com/noamnissan/wa-hub-demo.git
+
+cd wa-hub-demo
+sudo -u wahub npm ci --omit=dev
+
+# יצירת סודות
+openssl rand -hex 32  # HUB_TOKEN
+openssl rand -hex 32  # WEBHOOK_SECRET</code></pre>
+        </div>
+        <div>
+          <h3 style="display:flex;align-items:center;gap:0.5em;flex-direction:row-reverse;">
+            <i data-lucide="bot" style="width:24px;height:24px;"></i>עם Claude Code
+          </h3>
+<pre><code class="language-bash">$ claude
+
+&gt; תקים את wa-hub-demo
+  על השרת 192.0.2.10
+  עם systemd וכל ההגנות.</code></pre>
+          <p class="muted" style="font-size: 0.82em; margin-top: 0.6em;">
+            Claude קורא את ה-README, מבצע צעד-צעד, מאשר פעולות מסוכנות, ומדפיס בסוף את ה-token.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 11. STAGE 4: PAIR ════════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">4</span><h2 style="display:inline">פיירינג</h2></div>
+      <p>ה-Hub מייצר QR. סורקים מהטלפון. תוך 3 שניות — מחוברים.</p>
+<pre><code class="language-bash"># שולפים את ה-QR כקובץ PNG
+curl -H "Authorization: Bearer $HUB_TOKEN" \
+     https://your-url/api/instance/qr.png &gt; qr.png
+
+# פותחים במכונה המקומית
+open qr.png                   # macOS
+start qr.png                  # Windows
+xdg-open qr.png               # Linux
+
+# בטלפון:
+# WhatsApp → הגדרות → מכשירים מקושרים → קישור מכשיר → סורקים</code></pre>
+      <div class="callout" style="margin-top: 1em;">
+        <strong>מאחורי הקלעים:</strong> ה-Hub מנהל handshake הצפנה מלא מול השרתים של WhatsApp. אנחנו מקבלים JSON נקי.
+      </div>
+    </section>
+
+    <!-- ═══ 12. STAGE 5: EXPOSE ══════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">5</span><h2 style="display:inline">חשיפה לאינטרנט</h2></div>
+      <p style="margin-bottom: 1em;">Base44 רץ ב-cloud. ה-Hub רץ על loopback. נחבר ביניהם — בלי לפתוח פורט.</p>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="cloud-lightning"></i></div>
+          <h3>Cloudflare Tunnel</h3>
+          <p style="margin-top: 0.5em">חיבור יוצא ל-Cloudflare. אין פתיחת פורט. HTTPS חינם. DDoS protection חינם.</p>
+          <p class="accent" style="margin-top: 0.6em; font-weight: 600; font-size: 0.85em;">⭐ מומלץ לדמו ולפרודקשן</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="settings-2"></i></div>
+          <h3>Nginx + Let's Encrypt</h3>
+          <p style="margin-top: 0.5em">מסורתי. דורש דומיין + פתיחת :443. שליטה מלאה, יותר עבודה.</p>
+        </div>
+      </div>
+<pre style="margin-top: 1em"><code class="language-bash"># Quick tunnel — בלי חשבון, URL רנדומלי
+cloudflared tunnel --url http://127.0.0.1:3060
+
+# פלט תוך 5 שניות:
+# https://soft-clouds-rapidly-eat.trycloudflare.com</code></pre>
+    </section>
+
+    <!-- ═══ 13. STAGE 6: INTEGRATE EVERYWHERE ════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">6</span><h2 style="display:inline">שימוש מכל מערכת</h2></div>
+      <p style="margin-bottom: 1em;">REST + JSON + Bearer = הסטנדרט הכי משעמם בעולם. וזה היתרון.</p>
+      <div class="grid-3">
+        <div class="card"><div class="card-icon"><i data-lucide="layers-3"></i></div><h4>Base44</h4><p>פונקציית Deno + secrets</p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="square-stack"></i></div><h4>Bubble</h4><p>API Connector plugin</p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="flame"></i></div><h4>Firebase</h4><p>Cloud Function + <code>fetch()</code></p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="workflow"></i></div><h4>Make / n8n / Zapier</h4><p>HTTP module ו-webhook נכנס</p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="circle-dot"></i></div><h4>Python / Django</h4><p><code>requests.post(...)</code></p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="globe-2"></i></div><h4>WordPress / Laravel</h4><p><code>wp_remote_post</code> / Http</p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="table"></i></div><h4>Google Sheets</h4><p>Apps Script + UrlFetchApp</p></div>
+        <div class="card"><div class="card-icon"><i data-lucide="terminal-square"></i></div><h4>cron / shell</h4><p><code>curl</code> בלילה לסיכום יומי</p></div>
+        <div class="card" style="background: linear-gradient(135deg, rgba(37,211,102,0.12), rgba(0,168,132,0.04)); border-color: rgba(37,211,102,0.4);">
+          <div class="card-icon"><i data-lucide="award"></i></div>
+          <h4 class="accent">תוצאה</h4>
+          <p><strong>אין vendor lock-in</strong></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 14. BASE44 SEND CODE ═════════════════════════════════ -->
+    <section>
+      <span class="kicker">code example</span>
+      <h2><i data-lucide="send"></i>שליחה מ-Base44</h2>
+<pre><code class="language-typescript">// base44/functions/send-whatsapp/index.ts
+const HUB_URL   = Deno.env.get("WA_HUB_URL")!;
+const HUB_TOKEN = Deno.env.get("WA_HUB_TOKEN")!;
+
+Deno.serve(async (req) =&gt; {
+  const { to, text } = await req.json();
+
+  const r = await fetch(`${HUB_URL}/api/messages/send/text`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${HUB_TOKEN}`,
+      "Content-Type":  "application/json",
+    },
+    body: JSON.stringify({ to, text }),
+  });
+
+  return new Response(await r.text(), { status: r.status });
+});</code></pre>
+      <p class="muted" style="margin-top: 0.4em; font-size: 0.85em; text-align: center;">
+        14 שורות קוד · כל מערכת — אותה תבנית
+      </p>
+    </section>
+
+    <!-- ═══ 15. BASE44 WEBHOOK CODE ══════════════════════════════ -->
+    <section>
+      <span class="kicker">code example</span>
+      <h2><i data-lucide="webhook"></i>Webhook מאומת חתימה</h2>
+<pre><code class="language-typescript">import { createHmac, timingSafeEqual } from "node:crypto";
+
+const SECRET = Deno.env.get("WA_HUB_SECRET")!;
+
+Deno.serve(async (req) =&gt; {
+  const body = await req.text();
+  const got  = req.headers.get("x-hub-signature") ?? "";
+  const want = "sha256=" + createHmac("sha256", SECRET)
+                            .update(body).digest("hex");
+
+  // ⚠️ חובה — constant-time compare
+  if (got.length !== want.length ||
+      !timingSafeEqual(Buffer.from(got), Buffer.from(want))) {
+    return new Response("invalid signature", { status: 401 });
+  }
+
+  const event = JSON.parse(body);
+  // ... your logic ...
+  return new Response("ok");
+});</code></pre>
+    </section>
+
+    <!-- ═══ 16. STAGE 7: SECURE ══════════════════════════════════ -->
+    <section>
+      <div class="stage-header"><span class="step-badge">7</span><h2 style="display:inline">אבטחה לפרודקשן</h2></div>
+      <div class="grid-2">
+        <ul class="checks">
+          <li><strong>HUB_TOKEN</strong> · 256 ביט אקראיים · Bearer בלבד</li>
+          <li><strong>constant-time compare</strong> · מונע timing attacks</li>
+          <li><strong>WEBHOOK_SECRET</strong> · HMAC-SHA256 על כל webhook</li>
+          <li><strong>Rate limit</strong> · 120 req/min ברירת מחדל</li>
+        </ul>
+        <ul class="checks">
+          <li><strong>Loopback בלבד</strong> · :3060 לא חשוף — רק דרך Tunnel</li>
+          <li><strong>systemd hardening</strong> · NoNewPrivileges + ProtectSystem</li>
+          <li><strong>unattended-upgrades</strong> · תיקוני אבטחה אוטומטיים</li>
+          <li><strong>ניטור</strong> · Uptime Robot על <code>/healthz</code></li>
+        </ul>
+      </div>
+      <div class="callout" style="margin-top: 1.2em;">
+        <i data-lucide="key" style="width: 16px; height: 16px; vertical-align: middle; margin-left: 8px; color: var(--green);"></i>
+        <strong>סיבוב Token:</strong> סקריפט מוכן ב-<code>scripts/rotate-token.sh</code> · 30 שניות downtime.
+      </div>
+    </section>
+
+    <!-- ═══ 17. AI IN THE LOOP ═══════════════════════════════════ -->
+    <section>
+      <span class="kicker">the bonus</span>
+      <h2><i data-lucide="sparkles"></i>AI בתוך הלולאה</h2>
+      <p style="margin-bottom: 1em;">ברגע שיש לך REST + Webhooks — אתה יכול לחבר כל מה שתרצה.</p>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="message-circle"></i></div>
+          <h3>תגובה אוטומטית</h3>
+          <p>Webhook → Claude / GPT → שליחת תשובה. צ'אטבוט תוך 30 שורות.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="file-text"></i></div>
+          <h3>סיכום שיחות</h3>
+          <p>Cron יומי → קריאה ל-history → AI summary → שליחה במייל.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="filter"></i></div>
+          <h3>סינון חכם</h3>
+          <p>Webhook → classifier → תיוג ל-CRM / Slack / Linear אוטומטית.</p>
+        </div>
+      </div>
+      <div class="callout" style="margin-top: 1.3em; text-align: center;">
+        <strong>ה-API שלך הוא <em>תשתית</em>.</strong> מה שאתה בונה מעליה — תלוי רק בך.
+      </div>
+    </section>
+
+    <!-- ═══ 18. COMPARISON ═══════════════════════════════════════ -->
+    <section>
+      <span class="kicker">vs cloud apis</span>
+      <h2><i data-lucide="scale" style="width: 1em; height: 1em;"></i>השוואה — מול שירותים מנוהלים</h2>
+      <table class="compare">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="ours" style="background: linear-gradient(135deg, rgba(0,168,132,0.18), rgba(0,168,132,0.02));">wa-hub-demo</th>
+            <th>Green-API</th>
+            <th>WhatsApp Cloud (Meta)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>עלות חודשית</td><td class="ours">€3.79 קבוע</td><td>$20–$200+</td><td>$0.005–0.08 / msg</td></tr>
+          <tr><td>הגבלת הודעות</td><td class="ours">ללא</td><td>תלוי תוכנית</td><td>1K חינם, אז per-msg</td></tr>
+          <tr><td>פרטיות</td><td class="ours">השרת שלך</td><td>השרת שלהם</td><td>השרת של Meta</td></tr>
+          <tr><td>זמן setup</td><td class="ours">~45 דקות</td><td>5 דקות</td><td>שבועות (אישור עסקי)</td></tr>
+          <tr><td>תחזוקה</td><td class="ours">שלך</td><td>שלהם</td><td>שלהם</td></tr>
+          <tr><td>SLA</td><td class="ours">שלך</td><td>99.9%</td><td>99.9%</td></tr>
+          <tr><td>Multi-tenant</td><td class="ours">דורש קונפיגורציה</td><td>מובנה</td><td>מובנה</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 0.8em; color: var(--muted); text-align: center; font-size: 0.85em;">
+        <em>אין תשובה אחת.</em> זה תלוי בגודל, ברמת הפרטיות, ובדרישות SLA.
+      </p>
+    </section>
+
+    <!-- ═══ 19. GOTCHAS ══════════════════════════════════════════ -->
+    <section>
+      <span class="kicker">heads up</span>
+      <h2><i data-lucide="alert-triangle"></i>גיצ'ות לדעת מראש</h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-icon"><i data-lucide="user-cog"></i></div>
+          <h3>Baileys 7 + WhatsApp LID</h3>
+          <p>החל מ-2025, WhatsApp מציגים זהויות <code>@lid</code> במקום מספרי טלפון, כדי למנוע harvesting. ה-Hub מנסה לחלץ phone דרך <code>senderPn</code> / <code>remoteJidAlt</code> ונופל ל-LID אם אין.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="refresh-cw"></i></div>
+          <h3>Quick Tunnel URL מתחדש</h3>
+          <p>בכל restart של cloudflared — URL חדש. <strong>מצוין לדמו</strong>, לפרודקשן השתמש ב-Named Tunnel עם דומיין קבוע.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="clock"></i></div>
+          <h3>Linked Device timeout</h3>
+          <p>אם הטלפון לא היה online 14+ יום, ה-session פג. צריך לסרוק QR מחדש.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon"><i data-lucide="download-cloud"></i></div>
+          <h3>חובה unattended-upgrades</h3>
+          <p>בלי תיקוני אבטחה אוטומטיים, אחרי 3 חודשים השרת שלך הוא יעד קל. <code>apt-get install -y unattended-upgrades</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 20. END ══════════════════════════════════════════════ -->
+    <section class="title-slide">
+      <div class="pill"><i data-lucide="heart"></i>תודה</div>
+      <h1 style="font-size: 3em; margin-top: 0.6em;">שאלות?</h1>
+      <p class="subtitle">השאלות הכי טובות מקבלות 5 דקות פיצוץ.</p>
+      <div class="repo-box" style="margin-top: 1em;">
+        <span class="label">הקוד, המדריך, והמצגת</span>
+        <code>github.com/noamnissan/wa-hub-demo</code>
+      </div>
+      <div class="meta">
+        <span>noamnissan10@gmail.com</span>
+        <span class="dot"></span>
+        <span>נעם ניסן</span>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    rtl: true,
+    transition: 'fade',
+    transitionSpeed: 'default',
+    slideNumber: 'c/t',
+    controls: true,
+    progress: true,
+    history: true,
+    center: true,
+    width: 1280,
+    height: 800,
+    margin: 0.07,
+    minScale: 0.4,
+    maxScale: 1.4,
+    plugins: [ RevealHighlight ],
+  });
+
+  function refreshIcons() {
+    if (window.lucide) lucide.createIcons();
+  }
+  Reveal.on('ready',          refreshIcons);
+  Reveal.on('slidechanged',   refreshIcons);
+  window.addEventListener('load', refreshIcons);
+</script>
+</body>
+</html>
