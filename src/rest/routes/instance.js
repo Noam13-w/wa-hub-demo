@@ -1,10 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { state } from '../../state.js';
-import { resetAuth } from '../../baileys/socket.js';
+import { getSocket, resetAuth } from '../../baileys/socket.js';
 import { config } from '../../config.js';
+import {
+  getErrors,
+  getWebhookFailures,
+  runDiagnose,
+} from '../../diagnostics.js';
 
 export const instanceRouter = Router();
+
+// Same strict CSP we apply to /healthz — anyone may open these in a tab.
+const STRICT_CSP =
+  "default-src 'none'; img-src 'self' data:; style-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 instanceRouter.get('/status', (_req, res) => {
   res.json({
@@ -34,6 +43,8 @@ instanceRouter.get('/qr.png', (_req, res) => {
   const b64 = state.qr.dataUrl.replace(/^data:image\/png;base64,/, '');
   res.setHeader('content-type', 'image/png');
   res.setHeader('cache-control', 'no-store');
+  res.setHeader('content-security-policy', STRICT_CSP);
+  res.setHeader('x-content-type-options', 'nosniff');
   res.end(Buffer.from(b64, 'base64'));
 });
 
@@ -53,6 +64,32 @@ instanceRouter.put('/webhook', (req, res) => {
   }
   state.setWebhook({ url: parsed.data.url ?? null, events: parsed.data.events ?? [] });
   res.json(state.webhook);
+});
+
+// Last N webhook delivery failures (disk-backed, capped at 100).
+instanceRouter.get('/webhook/failures', (_req, res) => {
+  res.json({ count: getWebhookFailures().length, failures: getWebhookFailures() });
+});
+
+// Last N route / unhandled errors (in-memory, capped at 50).
+instanceRouter.get('/errors', (_req, res) => {
+  res.json({ count: getErrors().length, errors: getErrors() });
+});
+
+// Hub self-test — runs a small battery of checks and returns a structured JSON.
+// Total wall-clock ~6s worst-case (the public-internet probe).
+instanceRouter.get('/diagnose', async (_req, res, next) => {
+  try {
+    const sock = getSocket();
+    const result = await runDiagnose({
+      socketOpen: !!sock && state.connection === 'connected',
+      webhookConfigured: !!state.webhook.url,
+      connection: state.connection,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
 instanceRouter.post('/logout', async (_req, res, next) => {

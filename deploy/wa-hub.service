@@ -13,6 +13,9 @@ EnvironmentFile=/srv/wa-hub-demo/.env
 ExecStart=/usr/bin/node /srv/wa-hub-demo/src/index.js
 Restart=always
 RestartSec=5
+# Match src/index.js shutdown timeout (12 s) with a small grace buffer so systemd
+# doesn't SIGKILL us mid-shutdown. Webhook drain + WS close + Baileys end all need a moment.
+TimeoutStopSec=15
 SyslogIdentifier=wa-hub-demo
 StandardOutput=journal
 StandardError=journal

@@ -3,8 +3,14 @@ import { request } from 'undici';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { state } from './state.js';
+import { incrPending, decrPending, recordWebhookFailure } from './diagnostics.js';
 
 const log = logger.child({ mod: 'webhook' });
+
+// Exponential backoff schedule, in milliseconds. Index = attempt - 1.
+// Total worst case: ~26 s wall-clock (0 + 2 + 6 + 18). Still fire-and-forget.
+const BACKOFF_MS = [0, 2_000, 6_000, 18_000];
+const MAX_ATTEMPTS = BACKOFF_MS.length;
 
 /**
  * Sign a JSON body with HMAC-SHA256 (compatible with GitHub-style `sha256=<hex>` header).
@@ -14,9 +20,27 @@ function sign(bodyString) {
 }
 
 /**
- * Single POST attempt. Returns { ok: boolean, statusCode?, err? }.
+ * Decide whether to retry. Retry on:
+ *   - network/connect errors (no statusCode)
+ *   - 5xx responses
+ *   - 408 / 429 (request timeout / rate limited — transient on the receiver)
+ * NEVER retry on other 4xx: the receiver has rejected the payload as malformed
+ * or unauthorized — retrying doesn't help and just wastes resources.
+ */
+function isRetryable(result) {
+  if (result.ok) return false;
+  const sc = result.statusCode;
+  if (sc === undefined || sc === null) return true; // network error
+  if (sc >= 500 && sc <= 599) return true;
+  if (sc === 408 || sc === 429) return true;
+  return false;
+}
+
+/**
+ * Single POST attempt. Returns { ok: boolean, statusCode?, err?, ms }.
  */
 async function postOnce(url, body, signature, event) {
+  const start = Date.now();
   try {
     const { statusCode } = await request(url, {
       method: 'POST',
@@ -30,15 +54,19 @@ async function postOnce(url, body, signature, event) {
       bodyTimeout: 10_000,
       headersTimeout: 10_000,
     });
-    return { ok: statusCode < 400, statusCode };
+    return { ok: statusCode < 400, statusCode, ms: Date.now() - start };
   } catch (err) {
-    return { ok: false, err: err.message };
+    return { ok: false, err: err.message, ms: Date.now() - start };
   }
 }
 
 /**
- * Deliver an event to the configured webhook. Fire-and-forget (logs on failure).
- * Performs ONE retry after 2s if the first attempt fails or returns non-2xx.
+ * Deliver an event to the configured webhook. Fire-and-forget.
+ *
+ * Retry policy: up to 4 attempts (immediate, +2s, +6s, +18s) but ONLY on
+ * 5xx, 408, 429, or network errors. 4xx (other) is a client error — we
+ * stop immediately and log the failure to the disk-backed buffer.
+ *
  * Filtering: if `state.webhook.events` is non-empty, only those events are delivered.
  */
 async function deliver(event, data) {
@@ -56,19 +84,57 @@ async function deliver(event, data) {
   const body = JSON.stringify(payload);
   const signature = sign(body);
 
-  let result = await postOnce(url, body, signature, event);
-  if (!result.ok) {
-    log.warn({ event, url, statusCode: result.statusCode, err: result.err }, 'webhook attempt 1 failed — retrying in 2s');
-    await new Promise((r) => setTimeout(r, 2000));
-    result = await postOnce(url, body, signature, event);
-    if (!result.ok) {
-      log.warn({ event, url, statusCode: result.statusCode, err: result.err }, 'webhook delivery failed after retry');
-      return;
+  incrPending();
+  const startedAt = Date.now();
+  let lastResult = null;
+
+  try {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const wait = BACKOFF_MS[attempt - 1];
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+
+      lastResult = await postOnce(url, body, signature, event);
+
+      // Structured log per attempt (useful for tracing tail-latency).
+      log.info(
+        {
+          event,
+          attempt,
+          maxAttempts: MAX_ATTEMPTS,
+          statusCode: lastResult.statusCode,
+          ok: lastResult.ok,
+          ms: lastResult.ms,
+          err: lastResult.err,
+        },
+        lastResult.ok ? 'webhook delivered' : 'webhook attempt failed',
+      );
+
+      if (lastResult.ok) return;
+      if (!isRetryable(lastResult)) {
+        log.warn(
+          { event, statusCode: lastResult.statusCode, err: lastResult.err },
+          'webhook delivery aborted — receiver returned non-retryable status',
+        );
+        break;
+      }
     }
-    log.info({ event, url, statusCode: result.statusCode }, 'webhook delivered on retry');
-    return;
+
+    // Got here → all attempts exhausted or aborted early.
+    recordWebhookFailure({
+      event,
+      url,
+      attempts: MAX_ATTEMPTS,
+      lastStatus: lastResult?.statusCode,
+      lastError: lastResult?.err,
+      totalMs: Date.now() - startedAt,
+    });
+    log.warn(
+      { event, url, statusCode: lastResult?.statusCode, err: lastResult?.err, totalMs: Date.now() - startedAt },
+      'webhook delivery FAILED — recorded to webhook-failures.json',
+    );
+  } finally {
+    decrPending();
   }
-  log.debug({ event, url, statusCode: result.statusCode }, 'webhook delivered');
 }
 
 /**

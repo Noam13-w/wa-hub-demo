@@ -5,8 +5,37 @@ import { startSocket, closeSocket } from './baileys/socket.js';
 import { attachWebhookListeners } from './webhook.js';
 import { buildApp } from './rest/server.js';
 import { startWsServer } from './ws/server.js';
+import { getPending, recordError } from './diagnostics.js';
 
 const log = logger.child({ mod: 'main' });
+
+// Heartbeat tick — 5 minutes. Reports RSS so the user can spot a leak in
+// `journalctl -u wa-hub`. systemd hard-caps MemoryMax=512M so we also log
+// a WARN when we cross 80% of that to give the user a heads-up before OOM-kill.
+const HEARTBEAT_MS = 5 * 60 * 1000;
+const MEM_WARN_BYTES = Math.floor(0.8 * 512 * 1024 * 1024);
+
+function logMemUsage(level = 'info') {
+  const mu = process.memoryUsage();
+  const fmt = (b) => `${Math.round(b / 1024 / 1024)}MB`;
+  log[level](
+    {
+      rss: fmt(mu.rss),
+      heapUsed: fmt(mu.heapUsed),
+      heapTotal: fmt(mu.heapTotal),
+      external: fmt(mu.external),
+      pendingDeliveries: getPending(),
+      connection: state.connection,
+    },
+    'heartbeat',
+  );
+  if (mu.rss > MEM_WARN_BYTES) {
+    log.warn(
+      { rssMB: Math.round(mu.rss / 1024 / 1024), limitMB: 512 },
+      'memory usage exceeds 80% of systemd MemoryMax — consider restarting or raising the cap',
+    );
+  }
+}
 
 async function main() {
   log.info({ name: config.HUB_NAME, restPort: config.HUB_PORT, wsPort: config.WS_PORT }, 'starting wa-hub-demo');
@@ -38,17 +67,27 @@ async function main() {
     process.exit(1);
   });
 
-  // 5. Graceful shutdown — give in-flight requests up to 8s, then force-exit.
+  // 5. Heartbeat — log memory usage every 5 minutes so leaks become visible.
+  logMemUsage('info'); // one immediate sample
+  const heartbeat = setInterval(() => logMemUsage('info'), HEARTBEAT_MS);
+  heartbeat.unref(); // never block shutdown waiting for the next tick
+
+  // 6. Graceful shutdown — give in-flight requests up to 12s, then force-exit.
+  //    Note: deploy/wa-hub.service sets TimeoutStopSec=15 so we have headroom.
   let shuttingDown = false;
   const shutdown = async (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info({ signal }, 'shutdown signal received — closing gracefully');
+    const pending = getPending();
+    log.info({ signal, pendingDeliveries: pending }, 'shutdown signal received — closing gracefully');
+    clearInterval(heartbeat);
+
     const forceExit = setTimeout(() => {
-      log.warn('graceful shutdown timed out — forcing exit');
+      log.warn({ pendingDeliveries: getPending() }, 'graceful shutdown timed out — forcing exit');
       process.exit(1);
-    }, 8000);
+    }, 12_000);
     forceExit.unref();
+
     try {
       await Promise.allSettled([
         new Promise((resolve) => httpServer.close(() => resolve())),
@@ -60,6 +99,7 @@ async function main() {
         }),
         closeSocket(),
       ]);
+      log.info({ drainedPending: pending - getPending(), stillPending: getPending() }, 'shutting down — drained pending deliveries');
       log.info('clean exit');
       process.exit(0);
     } catch (err) {
@@ -71,10 +111,17 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-process.on('unhandledRejection', (err) => log.error({ err }, 'unhandledRejection'));
-process.on('uncaughtException', (err) => log.error({ err }, 'uncaughtException'));
+process.on('unhandledRejection', (err) => {
+  recordError(err, { source: 'unhandledRejection' });
+  log.error({ err }, 'unhandledRejection');
+});
+process.on('uncaughtException', (err) => {
+  recordError(err, { source: 'uncaughtException' });
+  log.error({ err }, 'uncaughtException');
+});
 
 main().catch((err) => {
+  recordError(err, { source: 'fatal_startup' });
   log.error({ err }, 'fatal startup error');
   process.exit(1);
 });

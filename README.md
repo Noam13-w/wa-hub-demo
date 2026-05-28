@@ -80,10 +80,13 @@ All `/api/*` endpoints require `Authorization: Bearer <HUB_TOKEN>`.
 
 | Method | Path | What it does |
 |---|---|---|
-| `GET`  | `/healthz` | Liveness check (no auth) |
+| `GET`  | `/healthz` | Liveness check (no auth). Returns `connection`, `qr`, `webhookConfigured`, `pendingDeliveries`, `recentErrors`, `recentWebhookFailures`, `version`, `uptimeMs` |
 | `GET`  | `/api/instance/status` | Connection state + paired device info |
 | `GET`  | `/api/instance/qr` | Current QR (JSON, base64) |
 | `GET`  | `/api/instance/qr.png` | Current QR (raw PNG, openable in browser) |
+| `GET`  | `/api/instance/diagnose` | Self-test: internet reachability, auth dir, env, socket state |
+| `GET`  | `/api/instance/errors` | Last 50 unhandled errors (in-memory) |
+| `GET`  | `/api/instance/webhook/failures` | Last 100 failed webhook deliveries (disk-backed) |
 | `POST` | `/api/instance/logout` | Wipe auth, force re-pair |
 | `GET`/`PUT` | `/api/instance/webhook` | Get/set outbound webhook URL + event filter |
 | `POST` | `/api/messages/send/text` | `{ to, text, quotedMessageId? }` |
@@ -195,7 +198,7 @@ See [`.env.example`](.env.example) for the full list. The only required vars are
 | Var | Description |
 |---|---|
 | `HUB_TOKEN` | Bearer token clients must send. Generate: `openssl rand -hex 32` |
-| `HUB_TOKEN` | HMAC secret for webhook signatures. Generate: `openssl rand -hex 32` |
+| `WEBHOOK_SECRET` | HMAC secret for webhook signatures. Generate: `openssl rand -hex 32` |
 
 Everything else has sensible defaults.
 
@@ -204,6 +207,52 @@ Everything else has sensible defaults.
 - [`examples/base44/send-message.ts`](examples/base44/send-message.ts) — Base44 function that calls the hub to send a message
 - [`examples/base44/webhook-receiver.ts`](examples/base44/webhook-receiver.ts) — Base44 function that receives incoming messages (with signature verification)
 - [`examples/curl/`](examples/curl/) — shell snippets for every endpoint
+
+## Production checklist
+
+Before you call it live, run through this list. Every item maps to a specific
+hardening pass already implemented — verify each one in your environment.
+
+### 1. Boot & connectivity
+
+- [ ] `curl http://localhost:3060/healthz` returns `{ ok: true }` with a valid
+      `version` and `connection: "connected"`.
+- [ ] `curl -H "Authorization: Bearer $TOKEN" http://localhost:3060/api/instance/diagnose`
+      returns `summary: "pass"`. If `degraded` or `fail`, the JSON tells you which
+      check failed (internet, auth-dir, env, socket).
+- [ ] Send a test text message to your own number and confirm it arrives.
+
+### 2. Webhook delivery
+
+- [ ] Set `WEBHOOK_URL` (or `PUT /api/instance/webhook`) to your receiver.
+- [ ] Send yourself a message; confirm the receiver got the `message.incoming` event.
+- [ ] Verify the HMAC signature on the receiver side (`X-Hub-Signature: sha256=...`).
+- [ ] Temporarily point the webhook at an unreachable URL, send a message,
+      then `curl /api/instance/webhook/failures` — confirm the failure was logged
+      with 4 attempts.
+
+### 3. Security
+
+- [ ] `HUB_TOKEN` and `WEBHOOK_SECRET` are both ≥ 32 hex chars (`openssl rand -hex 32`).
+- [ ] `.env` is mode 600 and owned by `wahub:wahub`.
+- [ ] `ufw status` blocks `:3060` and `:3061` from the public internet — only
+      Cloudflare Tunnel (or your nginx reverse proxy) reaches the Hub.
+- [ ] No `HUB_TOKEN` substring appears in `journalctl -u wa-hub --since "1h ago"`.
+
+### 4. Resilience
+
+- [ ] `systemctl restart wa-hub` → reconnects to WhatsApp within 30 s without
+      a fresh QR.
+- [ ] `systemctl stop wa-hub` → graceful shutdown in journal (`drained N pending`).
+- [ ] After 1 h of idle, `journalctl -u wa-hub | grep heartbeat | tail` shows
+      memory RSS staying flat (no leak).
+
+### 5. Observability
+
+- [ ] `journalctl -u wa-hub -f` shows structured per-request log lines
+      (`m=POST p=/api/... s=200 ms=...`).
+- [ ] On every webhook attempt, you see `webhook delivered` (or
+      `webhook attempt failed`) lines with `attempt=N` and `ms=...`.
 
 ## Roadmap
 
