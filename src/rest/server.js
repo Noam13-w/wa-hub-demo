@@ -1,10 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import express from 'express';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { apiRateLimit, requireAuth } from '../auth.js';
+import { apiRateLimit, healthRateLimit, requireAuth } from '../auth.js';
 import { state } from '../state.js';
 import { recordError } from '../diagnostics.js';
 import { instanceRouter } from './routes/instance.js';
@@ -13,17 +10,6 @@ import { groupsRouter } from './routes/groups.js';
 import { checkRouter } from './routes/check.js';
 
 const log = logger.child({ mod: 'rest' });
-
-// Resolve package.json for version reporting in /healthz.
-const PKG_VERSION = (() => {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const pkg = JSON.parse(readFileSync(join(here, '../../package.json'), 'utf8'));
-    return pkg.version || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-})();
 
 // Tight CSP for the two endpoints that may be opened in a browser tab.
 // /healthz is JSON; /api/instance/qr.png is an image. Neither should ever
@@ -63,23 +49,14 @@ export function buildApp() {
   });
 
   // ── Open endpoints ────────────────────────────────────────────────────
-  app.get('/healthz', async (_req, res) => {
+  // Deliberately minimal: an unauthenticated liveness probe for uptime monitors.
+  // Version, instance name, queue depths, error counts and uptime are recon
+  // signals (CWE-200) and now live behind the token at GET /api/instance/status
+  // and /api/instance/diagnose. Rate-limited so it can't be flooded.
+  app.get('/healthz', healthRateLimit, (_req, res) => {
     res.setHeader('content-security-policy', STRICT_CSP);
     res.setHeader('x-content-type-options', 'nosniff');
-    // Lazy-import to avoid a cycle (diagnostics imports config/logger).
-    const { getPending, getErrors, getWebhookFailures } = await import('../diagnostics.js');
-    res.json({
-      ok: true,
-      name: config.HUB_NAME,
-      version: PKG_VERSION,
-      connection: state.connection,
-      qr: !!state.qr,
-      webhookConfigured: !!state.webhook.url,
-      pendingDeliveries: getPending(),
-      recentErrors: getErrors().length,
-      recentWebhookFailures: getWebhookFailures().length,
-      uptimeMs: Date.now() - state.startedAt,
-    });
+    res.json({ ok: true, connection: state.connection });
   });
 
   // ── Authenticated API ─────────────────────────────────────────────────
@@ -113,7 +90,17 @@ export function buildApp() {
     if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {
       return res.status(400).json({ error: 'invalid_json', message: 'Request body is not valid JSON' });
     }
-    res.status(500).json({ error: 'internal', message: err.message || 'unexpected server error' });
+    // Typed, client-safe errors carry an explicit status + code (egress policy
+    // rejections → 400, load-shed → 503). Surface those verbatim.
+    if (typeof err?.status === 'number' && err.status >= 400 && err.status < 500) {
+      return res.status(err.status).json({ error: err.code || 'bad_request', message: err.message });
+    }
+    if (err?.status === 503) {
+      return res.status(503).json({ error: err.code || 'unavailable', message: 'Server busy, retry shortly' });
+    }
+    // Genuine 500s: keep the detail in the logs/ring buffer (above), return a
+    // generic body so internal messages/paths don't leak to the caller.
+    res.status(500).json({ error: 'internal', message: 'unexpected server error' });
   });
 
   return app;

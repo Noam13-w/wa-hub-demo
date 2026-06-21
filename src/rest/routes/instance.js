@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { state } from '../../state.js';
 import { getSocket, resetAuth } from '../../baileys/socket.js';
 import { config } from '../../config.js';
+import { requireAdmin } from '../../auth.js';
+import { assertSafeUrl, EgressError } from '../../net/egress.js';
 import {
   getErrors,
   getWebhookFailures,
@@ -57,12 +59,24 @@ instanceRouter.get('/webhook', (_req, res) => {
   res.json(state.webhook);
 });
 
-instanceRouter.put('/webhook', (req, res) => {
+instanceRouter.put('/webhook', requireAdmin, (req, res) => {
   const parsed = webhookSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
   }
-  state.setWebhook({ url: parsed.data.url ?? null, events: parsed.data.events ?? [] });
+  // Enforce the same egress policy as config-time: http(s) only, and (unless
+  // ALLOW_PRIVATE_EGRESS) reject literal private/reserved targets. This blocks
+  // the obvious SSRF set; DNS-rebinding is caught later by the connect guard.
+  const url = parsed.data.url ?? null;
+  if (url) {
+    try {
+      assertSafeUrl(url);
+    } catch (err) {
+      const code = err instanceof EgressError ? err.code : 'invalid_url';
+      return res.status(400).json({ error: code, message: err.message });
+    }
+  }
+  state.setWebhook({ url, events: parsed.data.events ?? [] });
   res.json(state.webhook);
 });
 
@@ -71,9 +85,12 @@ instanceRouter.get('/webhook/failures', (_req, res) => {
   res.json({ count: getWebhookFailures().length, failures: getWebhookFailures() });
 });
 
-// Last N route / unhandled errors (in-memory, capped at 50).
+// Last N route / unhandled errors (in-memory, capped at 50). The full stack is
+// kept server-side (logs) but NOT echoed over the API — stacks disclose absolute
+// host paths and internal structure (CWE-209).
 instanceRouter.get('/errors', (_req, res) => {
-  res.json({ count: getErrors().length, errors: getErrors() });
+  const sanitized = getErrors().map(({ timestamp, name, message, ctx }) => ({ timestamp, name, message, ctx }));
+  res.json({ count: sanitized.length, errors: sanitized });
 });
 
 // Hub self-test — runs a small battery of checks and returns a structured JSON.
@@ -92,7 +109,7 @@ instanceRouter.get('/diagnose', async (_req, res, next) => {
   }
 });
 
-instanceRouter.post('/logout', async (_req, res, next) => {
+instanceRouter.post('/logout', requireAdmin, async (_req, res, next) => {
   try {
     await resetAuth();
     res.json({ ok: true, message: 'Auth cleared. New QR will appear shortly at GET /api/instance/qr' });

@@ -43,11 +43,14 @@ RestrictSUIDSGID=true
 LockPersonality=true
 CapabilityBoundingSet=
 SystemCallArchitectures=native
-# SystemCallFilter is intentionally left UNSET. Node 20+ uses syscalls (io_uring,
-# clone3) that systemd's @system-service allow-list blocks, which makes the
-# process core-dump with status=31/SYS on boot. Leaving the syscall filter open
+# SystemCallFilter is intentionally left UNSET by default. Node 20+ uses syscalls
+# (io_uring, clone3) that systemd's @system-service allow-list blocks, which makes
+# the process core-dump with status=31/SYS on boot. Leaving the syscall filter open
 # keeps all install routes reliable; every other sandbox directive above
 # (NoNewPrivileges, ProtectSystem=strict, empty CapabilityBoundingSet, …) stays in force.
+# To opt into a seccomp filter SAFELY (blocked calls return EPERM instead of
+# SIGSYS-killing the process), install deploy/wa-hub.hardening.conf.example as a
+# drop-in and verify the service still starts — see that file for instructions.
 ReadWritePaths=/srv/wa-hub-demo/data
 
 # Resource caps — adjust if you expect heavy traffic.

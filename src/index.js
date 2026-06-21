@@ -54,8 +54,8 @@ async function main() {
 
   // 2. Start REST.
   const app = buildApp();
-  const httpServer = app.listen(config.HUB_PORT, '0.0.0.0', () => {
-    log.info({ port: config.HUB_PORT }, 'REST API listening');
+  const httpServer = app.listen(config.HUB_PORT, config.HUB_HOST, () => {
+    log.info({ port: config.HUB_PORT, host: config.HUB_HOST }, 'REST API listening');
   });
   // A bind failure (EADDRINUSE/EACCES) is emitted asynchronously as an 'error'
   // event — main()'s trailing .catch cannot see it — so handle it explicitly

@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.2.0 — security hardening (external grey-box pentest remediation)
+
+Remediation of an authorized 10-surface grey-box penetration test. Closes the
+SSRF and availability findings and tightens auth, transport, and deploy posture.
+A few **behavior changes** are noted as ⚠ below.
+
+### Security — SSRF egress controls (the headline fix)
+
+- **New shared egress guard** (`src/net/egress.js`) applied to BOTH outbound
+  sinks: the configurable webhook URL and the media-by-URL fields
+  (`imageUrl`/`fileUrl`/`audioUrl`). It enforces an `http(s)`-only scheme
+  allowlist, rejects literal private/loopback/link-local/reserved targets
+  (incl. cloud metadata `169.254.169.254`), and — crucially — validates the
+  **actual connected IP** via a custom undici connector, which defeats DNS
+  rebinding. Redirects are followed manually and re-validated per hop.
+- ⚠ **Media URLs are now fetched server-side by the Hub** (size-capped at 20 MB)
+  and streamed to Baileys as bytes — Baileys never receives the raw URL. This
+  closes the redirect-following, exfil-to-WhatsApp, and rebinding vectors and
+  enforces the size cap on remote media too.
+- Opt-out for legitimate internal receivers: `ALLOW_PRIVATE_EGRESS=true`.
+
+### Security — auth, transport & DoS
+
+- ⚠ **Loopback by default.** REST and WS now bind `127.0.0.1` (`HUB_HOST` /
+  `WS_HOST`); set `0.0.0.0` to expose directly. Matches the tunnel deployment.
+- ⚠ **`?token=` disabled by default on REST** (`ALLOW_QUERY_TOKEN`, off) — query
+  tokens leak into logs/history. The `Authorization` header is always accepted,
+  and the **WebSocket now accepts the `Authorization` header** too.
+- **Rate-limiter key fix.** Keys on the real client IP (`CF-Connecting-IP` /
+  `req.ip` when `TRUST_PROXY`), not a collapsed `127.0.0.1` behind the tunnel —
+  closing an unauthenticated global-lockout DoS. The installer now sets
+  `TRUST_PROXY=true`. `/healthz` is rate-limited too.
+- **Length-leak-free token compare.** SHA-256-then-`timingSafeEqual`
+  (`src/security/compare.js`) — no early length return (CWE-208).
+- **Optional admin token.** `ADMIN_TOKEN` gates `POST /instance/logout` and
+  `PUT /instance/webhook` behind an `X-Admin-Token` header (privilege
+  separation; off → unchanged single-token behavior).
+- **Media concurrency cap** (`MEDIA_CONCURRENCY`, default 4) bounds peak memory;
+  excess load sheds with `503`.
+- **WebSocket hardening.** `maxPayload`, `WS_MAX_CLIENTS` connection cap, slow-
+  client backpressure skip, and an optional `WS_ALLOWED_ORIGINS` allowlist.
+- **Webhook replay protection.** New `x-hub-timestamp` + `x-hub-delivery`
+  headers; the reference receiver verifies a freshness window and dedups.
+
+### Security — info disclosure
+
+- ⚠ **`/healthz` trimmed** to `{ ok, connection }`. Version/name/queue/error
+  counters moved behind the token (`/api/instance/status`, `/diagnose`).
+- `GET /api/instance/errors` no longer returns stack traces (kept in logs).
+- `500` responses return a generic body; webhook-failure records store a short
+  error **code**, not the raw connect-error string (was an SSRF probe oracle).
+
+### Deploy
+
+- ⚠ **Deterministic installs.** `npm ci --omit=dev --ignore-scripts` (fallback to
+  `npm install`), blocking install-time script execution.
+- **Secrets no longer printed to a non-TTY.** When piped (`curl … | bash`) the
+  installer points to the 0600 `.env` instead of echoing `HUB_TOKEN` /
+  `WEBHOOK_SECRET` into the pipe / CI logs.
+- **Opt-in seccomp drop-in** (`deploy/wa-hub.hardening.conf.example`) re-enables a
+  syscall filter safely (`SystemCallErrorNumber=EPERM`) for operators who want it.
+
+### Verification
+
+- Added throwaway unit + HTTP integration checks during development (egress IP
+  classification, `assertSafeUrl`, gate load-shedding, auth, `/healthz` shape,
+  SSRF blocking). All passing; scripts are gitignored, not shipped.
+
 ## Unreleased — pre-webinar hardening pass (round 2)
 
 Focused on webhook delivery resilience, observability, and stricter input validation

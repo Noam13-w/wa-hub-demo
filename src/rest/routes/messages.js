@@ -3,8 +3,15 @@ import { z } from 'zod';
 import { getSocket } from '../../baileys/socket.js';
 import { normalizeJid } from '../../baileys/jid.js';
 import { state } from '../../state.js';
+import { config } from '../../config.js';
+import { safeFetchToBuffer } from '../../net/egress.js';
+import { createGate } from '../../util/gate.js';
 
 export const messagesRouter = Router();
+
+// Bound concurrent media work so a burst of large image/file/audio sends can't
+// pile up enough multi-MB Buffers to OOM the 512 MB-capped process.
+const mediaGate = createGate(config.MEDIA_CONCURRENCY, config.MEDIA_CONCURRENCY * 4);
 
 // 20 MB hard cap on a decoded base64 media blob. Matches express.json({ limit: '20mb' })
 // but applied to the *decoded* bytes — base64 inflates by ~4/3, so the JSON body itself
@@ -66,12 +73,21 @@ function mediaSource(field) {
     );
 }
 
-function toMediaContent(field, body) {
+// Resolve a media source to a bare in-memory Buffer the Hub controls. For URLs
+// we fetch the bytes ourselves through the SSRF guard (scheme/IP-checked, size-
+// capped, redirects re-validated) so Baileys never sees the raw URL — closing
+// the server-side-fetch SSRF + DNS-rebinding vectors and enforcing the 20 MB cap
+// on remote media too. A bare Buffer is Baileys' accepted media shape; note that
+// { stream: Buffer } is NOT (Baileys would iterate the Buffer byte-by-byte and
+// throw), so we must return the Buffer itself.
+async function resolveMediaContent(field, body) {
   const url = body[`${field}Url`];
-  if (url) return { url };
+  if (url) {
+    return safeFetchToBuffer(url, { maxBytes: MAX_MEDIA_BYTES });
+  }
   // Strip data: URL prefix if the caller sent one — Buffer.from() doesn't like it.
   const raw = body[`${field}Base64`].replace(/^data:[^;]+;base64,/, '');
-  return { stream: Buffer.from(raw, 'base64') };
+  return Buffer.from(raw, 'base64');
 }
 
 // Tiny route wrapper so we don't repeat try/catch in every handler.
@@ -99,8 +115,10 @@ messagesRouter.post('/send/image', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const image = toMediaContent('image', parsed.data);
-  const sent = await getSocket().sendMessage(jid, { image, caption: parsed.data.caption });
+  const sent = await mediaGate.run(async () => {
+    const image = await resolveMediaContent('image', parsed.data);
+    return getSocket().sendMessage(jid, { image, caption: parsed.data.caption });
+  });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
 
@@ -116,12 +134,14 @@ messagesRouter.post('/send/file', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const document = toMediaContent('file', parsed.data);
-  const sent = await getSocket().sendMessage(jid, {
-    document,
-    fileName: parsed.data.filename,
-    mimetype: parsed.data.mimetype,
-    caption: parsed.data.caption,
+  const sent = await mediaGate.run(async () => {
+    const document = await resolveMediaContent('file', parsed.data);
+    return getSocket().sendMessage(jid, {
+      document,
+      fileName: parsed.data.filename,
+      mimetype: parsed.data.mimetype,
+      caption: parsed.data.caption,
+    });
   });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
@@ -134,11 +154,13 @@ messagesRouter.post('/send/audio', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const audio = toMediaContent('audio', parsed.data);
-  const sent = await getSocket().sendMessage(jid, {
-    audio,
-    mimetype: 'audio/ogg; codecs=opus',
-    ptt: parsed.data.ptt,
+  const sent = await mediaGate.run(async () => {
+    const audio = await resolveMediaContent('audio', parsed.data);
+    return getSocket().sendMessage(jid, {
+      audio,
+      mimetype: 'audio/ogg; codecs=opus',
+      ptt: parsed.data.ptt,
+    });
   });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));

@@ -91,9 +91,11 @@ else
 fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
-# Install deps as wahub. Use npm install (not npm ci) — more forgiving
-# of transitive dep updates between commits.
-sudo -u "$SERVICE_USER" bash -c "cd '$INSTALL_DIR' && npm install --omit=dev --no-audit --no-fund" 2>&1 | tail -3
+# Install deps as wahub. Prefer `npm ci` for a reproducible, lockfile-pinned
+# tree (integrity-checked); fall back to `npm install` only if the lockfile is
+# out of sync. `--ignore-scripts` blocks arbitrary install-time code execution
+# (supply-chain hardening) — none of our deps need a build step.
+sudo -u "$SERVICE_USER" bash -c "cd '$INSTALL_DIR' && (npm ci --omit=dev --no-audit --no-fund --ignore-scripts || npm install --omit=dev --no-audit --no-fund --ignore-scripts)" 2>&1 | tail -3
 ok "code at $INSTALL_DIR, dependencies installed"
 
 # ─── 7. .env + systemd + start ───────────────────────────────────────────────
@@ -112,9 +114,15 @@ HUB_TOKEN=$HUB_TOKEN
 WEBHOOK_SECRET=$WEBHOOK_SECRET
 HUB_PORT=3060
 WS_PORT=3061
+# Bound to loopback — only the local Cloudflare Tunnel reaches the API/WS.
+HUB_HOST=127.0.0.1
+WS_HOST=127.0.0.1
 WEBHOOK_URL=
 WEBHOOK_EVENTS=
 RATE_LIMIT_PER_MIN=120
+# We run behind the Cloudflare Tunnel (a trusted local proxy), so trust its
+# forwarded client IP — the rate limiter keys on the real caller, not 127.0.0.1.
+TRUST_PROXY=true
 DATA_DIR=$INSTALL_DIR/data
 LOG_LEVEL=info
 EOF
@@ -171,19 +179,36 @@ echo -e "${GREEN}${BOLD}  🎉 wa-hub-demo is live!${RESET}"
 echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════════${RESET}"
 echo
 echo -e "${BOLD}Public URL:${RESET}        ${CYAN}${TUNNEL_URL:-(check in a moment)}${RESET}"
-echo -e "${BOLD}HUB_TOKEN:${RESET}         $HUB_TOKEN"
-echo -e "${BOLD}WEBHOOK_SECRET:${RESET}    $WEBHOOK_SECRET"
-echo
-echo -e "${BOLD}${YELLOW}⚠ Save the two secrets above to your password manager NOW — they won't be shown again.${RESET}"
+# Only echo raw secrets to an interactive terminal. When the installer is piped
+# (curl ... | bash) stdout is not a TTY, and printing would leak them into the
+# pipe / CI logs / scrollback — so we point to the 0600 .env instead.
+if [[ -t 1 ]]; then
+  echo -e "${BOLD}HUB_TOKEN:${RESET}         $HUB_TOKEN"
+  echo -e "${BOLD}WEBHOOK_SECRET:${RESET}    $WEBHOOK_SECRET"
+  echo
+  echo -e "${BOLD}${YELLOW}⚠ Save the two secrets above to your password manager NOW.${RESET}"
+  TOKDISP="$HUB_TOKEN"
+else
+  echo -e "${BOLD}Secrets:${RESET}           stored in ${CYAN}$ENV_FILE${RESET} (chmod 600, owner $SERVICE_USER)"
+  echo -e "                   reveal: ${CYAN}sudo grep -E '^(HUB_TOKEN|WEBHOOK_SECRET)=' $ENV_FILE${RESET}"
+  echo
+  echo -e "${BOLD}${YELLOW}⚠ Secrets were NOT printed (you piped the installer into bash). Read them from the file above and store them in a password manager.${RESET}"
+  TOKDISP='$HUB_TOKEN'
+fi
 echo
 echo -e "${BOLD}Next steps:${RESET}"
 echo
+if [[ "$TOKDISP" == '$HUB_TOKEN' ]]; then
+  echo -e "  ${BOLD}0. On your local machine, load the token into your shell:${RESET}"
+  echo -e "       ${CYAN}export HUB_TOKEN=<paste HUB_TOKEN from the server's .env>${RESET}"
+  echo
+fi
 echo -e "  ${BOLD}1. Pair WhatsApp.${RESET} On your local machine (PowerShell or terminal):"
 echo
 if [[ -n "$TUNNEL_URL" ]]; then
-  echo -e "       ${CYAN}curl -fsS -H 'Authorization: Bearer $HUB_TOKEN' $TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
+  echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer $TOKDISP\" $TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
 else
-  echo -e "       ${CYAN}curl -fsS -H 'Authorization: Bearer \$HUB_TOKEN' \$TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
+  echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer \$HUB_TOKEN\" \$TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
 fi
 echo
 echo -e "       (or fetch qr.png via SCP from this server — see guide section 5)"
@@ -192,7 +217,7 @@ echo -e "  ${BOLD}2. Open qr.png and scan from WhatsApp${RESET} → Settings →
 echo
 echo -e "  ${BOLD}3. Send a test message:${RESET}"
 if [[ -n "$TUNNEL_URL" ]]; then
-  echo -e "       ${CYAN}curl -X POST -H 'Authorization: Bearer $HUB_TOKEN' \\${RESET}"
+  echo -e "       ${CYAN}curl -X POST -H \"Authorization: Bearer $TOKDISP\" \\${RESET}"
   echo -e "       ${CYAN}     -H 'Content-Type: application/json' \\${RESET}"
   echo -e "       ${CYAN}     -d '{\"to\":\"<recipient>\",\"text\":\"hi\"}' \\${RESET}"
   echo -e "       ${CYAN}     $TUNNEL_URL/api/messages/send/text${RESET}"

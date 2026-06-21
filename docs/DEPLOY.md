@@ -18,7 +18,7 @@ All three install the **same** hardened `deploy/wa-hub.service`.
 
 ## What the server ends up with
 
-- Node 20, a `wahub` system user, the repo at `/srv/wa-hub-demo`, deps installed (`--omit=dev`).
+- Node 20, a `wahub` system user, the repo at `/srv/wa-hub-demo`, deps installed reproducibly (`npm ci --omit=dev --ignore-scripts`).
 - `/srv/wa-hub-demo/.env` (`chmod 600`, owned by `wahub`) with random `HUB_TOKEN` + `WEBHOOK_SECRET`.
 - `wa-hub.service` (REST `:3060`, WS `:3061`, loopback) — `Restart=always`, `MemoryMax=512M`.
 - ufw: only `22/tcp` open; fail2ban active; SSH key-only.
@@ -40,9 +40,17 @@ All three install the **same** hardened `deploy/wa-hub.service`.
 | `WEBHOOK_SECRET` | — (required, ≥16 chars) | HMAC key for outbound webhooks. |
 | `HUB_PORT` | `3060` | REST port. |
 | `WS_PORT` | `3061` | WebSocket port. |
+| `HUB_HOST` / `WS_HOST` | `127.0.0.1` | Bind address. Loopback by default (reachable only via the local tunnel). Set `0.0.0.0` to expose directly — then firewall it yourself. |
+| `ADMIN_TOKEN` | — (optional) | When set, `POST /instance/logout` and `PUT /instance/webhook` also require an `X-Admin-Token` header (privilege separation from the send/read token). |
 | `WEBHOOK_URL` | — | **Default** webhook target; a runtime `PUT /api/instance/webhook` (persisted to `data/webhook.json`) overrides it. |
 | `WEBHOOK_EVENTS` | (all) | Comma-separated event filter, e.g. `message.incoming,message.outgoing`. |
-| `RATE_LIMIT_PER_MIN` | `120` | Per-minute API cap; `0` disables. |
+| `RATE_LIMIT_PER_MIN` | `120` | Per-minute cap **per client IP**; `0` disables. |
+| `TRUST_PROXY` | `false` | Trust `CF-Connecting-IP`/`X-Forwarded-For` for the rate-limit key. **Set `true` behind the Cloudflare Tunnel** (the installer does this). |
+| `MEDIA_CONCURRENCY` | `4` | Max concurrent media sends (bounds peak memory). |
+| `WS_MAX_CLIENTS` | `64` | Max simultaneous WebSocket clients. |
+| `ALLOW_PRIVATE_EGRESS` | `false` | Allow webhook/media fetches to private/loopback/metadata IPs. Keep `false` to block SSRF. |
+| `ALLOW_QUERY_TOKEN` | `false` | Accept `?token=` on REST routes (leaks into logs). Header auth is always on. |
+| `WS_ALLOWED_ORIGINS` | (none) | Comma-separated Origin allowlist for browser WS clients. |
 | `DATA_DIR` | `./data` | Holds `auth/` (session) + `webhook.json` + failure logs. |
 | `LOG_LEVEL` | `info` | `trace…fatal`. |
 

@@ -16,3 +16,9 @@ dist/
 .smoke-data/
 # Pre-publication audit notes — kept local, not part of the public product
 SECURITY_REPORT.md
+SECURITY_AUDIT_*.md
+# Throwaway local verification scripts
+_verify.mjs
+_smoke.mjs
+_itest.mjs
+_extract_report.cjs

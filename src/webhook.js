@@ -1,9 +1,10 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { request } from 'undici';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { state } from './state.js';
 import { incrPending, decrPending, recordWebhookFailure } from './diagnostics.js';
+import { assertSafeUrl, guardedAgent } from './net/egress.js';
 
 const log = logger.child({ mod: 'webhook' });
 
@@ -39,15 +40,22 @@ function isRetryable(result) {
 /**
  * Single POST attempt. Returns { ok: boolean, statusCode?, err?, ms }.
  */
-async function postOnce(url, body, signature, event) {
+async function postOnce(url, body, signature, event, headers) {
   const start = Date.now();
   try {
     const { statusCode, body: resBody } = await request(url, {
       method: 'POST',
+      // SSRF guard: refuse connections that resolve to private/reserved
+      // addresses (no-op when ALLOW_PRIVATE_EGRESS is set). Never follow
+      // redirects — a 3xx to an internal target would bypass the URL check.
+      dispatcher: guardedAgent(),
+      maxRedirections: 0,
       headers: {
         'content-type': 'application/json',
         'x-hub-signature': signature,
         'x-hub-event': event,
+        'x-hub-timestamp': headers.timestamp,
+        'x-hub-delivery': headers.delivery,
         'user-agent': `wa-hub-demo/${config.HUB_NAME}`,
       },
       body,
@@ -59,7 +67,9 @@ async function postOnce(url, body, signature, event) {
     try { await resBody.dump(); } catch { /* ignore */ }
     return { ok: statusCode < 400, statusCode, ms: Date.now() - start };
   } catch (err) {
-    return { ok: false, err: err.message, ms: Date.now() - start };
+    // Store the short error code, not the verbose message — the failure buffer
+    // is reachable via the API and raw connect errors are an SSRF probe oracle.
+    return { ok: false, err: err.code || 'request_failed', ms: Date.now() - start };
   }
 }
 
@@ -78,14 +88,28 @@ async function deliver(event, data) {
   const filter = state.webhook.events;
   if (filter.length > 0 && !filter.includes(event)) return;
 
+  // Re-validate the persisted URL at delivery time (scheme + literal private IP).
+  // The connect-time guard in postOnce additionally defeats DNS rebinding.
+  try {
+    assertSafeUrl(url);
+  } catch (err) {
+    recordWebhookFailure({ event, url, attempts: 0, lastStatus: null, lastError: err.code || 'invalid_url', totalMs: 0 });
+    log.warn({ event, url, err: err.code }, 'webhook delivery skipped — URL failed egress policy');
+    return;
+  }
+
+  const timestamp = Date.now();
   const payload = {
     event,
-    timestamp: Date.now(),
+    timestamp,
     instance: config.HUB_NAME,
     data,
   };
   const body = JSON.stringify(payload);
   const signature = sign(body);
+  // Per-delivery id lets receivers dedup retries (replay protection alongside
+  // the timestamp). Same id is reused across this delivery's retry attempts.
+  const deliveryHeaders = { timestamp: String(timestamp), delivery: randomUUID() };
 
   incrPending();
   const startedAt = Date.now();
@@ -96,7 +120,7 @@ async function deliver(event, data) {
       const wait = BACKOFF_MS[attempt - 1];
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
-      lastResult = await postOnce(url, body, signature, event);
+      lastResult = await postOnce(url, body, signature, event, deliveryHeaders);
 
       // Structured log per attempt (useful for tracing tail-latency).
       log.info(

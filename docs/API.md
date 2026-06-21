@@ -10,23 +10,24 @@ Everything is plain **REST + JSON + Bearer auth**. Generated from the source in 
 
 ## Authentication
 
-Every route under `/api/*` requires the Hub token, either way:
+Every route under `/api/*` requires the Hub token via the header:
 
 ```
 Authorization: Bearer <HUB_TOKEN>
 ```
 
-or, where headers are awkward (e.g. opening an image in a browser, WebSocket):
+The `?token=<HUB_TOKEN>` query form is **disabled by default** (query strings leak
+into proxy/access logs and browser history). Enable it only if you must, with
+`ALLOW_QUERY_TOKEN=true`. The WebSocket accepts the token via the `Authorization`
+header too (preferred), or `?token=` as a fallback.
 
-```
-?token=<HUB_TOKEN>
-```
-
-- Comparison is constant-time (`src/auth.js`).
+- Comparison is constant-time and leaks no length (`src/auth.js`, `src/security/compare.js`).
 - Missing/invalid token → `401 { "error": "unauthorized" }`.
-- Rate limit: `RATE_LIMIT_PER_MIN` (default **120**/min/instance). Exceeding it → `429 { "error": "rate_limited" }`. Set `RATE_LIMIT_PER_MIN=0` to disable.
+- Rate limit: `RATE_LIMIT_PER_MIN` (default **120**/min **per client IP**). Exceeding it → `429 { "error": "rate_limited" }`. Set `RATE_LIMIT_PER_MIN=0` to disable. Behind a tunnel/proxy set `TRUST_PROXY=true` so the limiter keys on the real caller, not the proxy.
+- **Admin routes.** When `ADMIN_TOKEN` is set, `POST /api/instance/logout` and `PUT /api/instance/webhook` additionally require an `X-Admin-Token: <ADMIN_TOKEN>` header.
+- **Outbound egress (webhook + media URLs).** `http(s)` only, and private/loopback/link-local targets (incl. `169.254.169.254`) are refused to prevent SSRF. Override with `ALLOW_PRIVATE_EGRESS=true` if your receiver is on a private network.
 
-The only **open** endpoint (no token) is `GET /healthz`.
+The only **open** endpoint (no token) is `GET /healthz`, which returns just `{ "ok": true, "connection": "..." }`.
 
 ### Recipient (`to`) formats accepted
 
@@ -195,7 +196,12 @@ When a webhook URL is set, the Hub POSTs JSON to it on every (subscribed) event.
 | `content-type` | `application/json` |
 | `x-hub-signature` | `sha256=<HMAC-SHA256(WEBHOOK_SECRET, rawBody)>` |
 | `x-hub-event` | the event name |
+| `x-hub-timestamp` | epoch-ms the payload was generated (verify it's recent to reject replays) |
+| `x-hub-delivery` | unique id per delivery; stable across this delivery's retries (dedup on it) |
 | `user-agent` | `wa-hub-demo/<HUB_NAME>` |
+
+> Verify the signature, **and** reject deliveries whose `x-hub-timestamp` is stale (e.g. >5 min skew)
+> and dedup on `x-hub-delivery` — see `examples/base44/webhook-receiver.ts` for a reference receiver.
 
 **Body:**
 ```json
@@ -249,9 +255,14 @@ On the **LID** rollout, `fromNumber` may itself be a logical id when WhatsApp hi
 
 ## WebSocket
 
-Real-time event stream on `:3061`:
+Real-time event stream on `:3061`. Bound to **loopback by default** (`WS_HOST=127.0.0.1`)
+— set `WS_HOST=0.0.0.0` (and open the port / tunnel it) to reach it remotely.
+
+Authenticate with the `Authorization: Bearer <HUB_TOKEN>` header (preferred), or the
+`?token=` query fallback where the header is awkward:
 
 ```
+ws://<host>:3061/            Authorization: Bearer <HUB_TOKEN>
 ws://<host>:3061/?token=<HUB_TOKEN>
 ```
 
@@ -263,9 +274,13 @@ Then one frame per event:
 ```json
 { "event": "message.incoming", "timestamp": 1730000000000, "data": { ... } }
 ```
-(No `instance` field, unlike the webhook.) Bad/absent token → the socket closes with code `4001`.
+(No `instance` field, unlike the webhook.) Bad/absent token → the socket closes with code `4001`;
+a forbidden `Origin` (when `WS_ALLOWED_ORIGINS` is set) → `4003`; over `WS_MAX_CLIENTS` → `1013`.
 
-> ⚠️ The token rides in the URL query, which leaks into proxy/browser logs. Use a dedicated/short-lived token for dashboards and serve the WS only behind the encrypted tunnel.
+> ⚠️ Prefer the `Authorization` header. If you use `?token=`, the token leaks into proxy/browser
+> logs — use a dedicated token for dashboards and serve the WS only behind the encrypted tunnel.
+> The stream carries full message **content** to every authenticated client, so treat the token as
+> sensitive and restrict `WS_ALLOWED_ORIGINS` for browser dashboards.
 
 ---
 

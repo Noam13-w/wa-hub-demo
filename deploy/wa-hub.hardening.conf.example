@@ -1,0 +1,28 @@
+# Optional extra sandbox hardening for wa-hub.service (seccomp syscall filter).
+#
+# The shipped unit leaves SystemCallFilter UNSET because, on some Node 20 builds
+# + systemd versions, a strict allow-list makes the process core-dump on boot
+# with status=31/SYS (io_uring / clone3 are killed with SIGSYS). This drop-in
+# re-enables a syscall filter SAFELY: SystemCallErrorNumber=EPERM makes blocked
+# calls fail with an error the runtime can recover from instead of being killed.
+#
+# Enable it (and TEST that the service still starts):
+#
+#   sudo install -m 644 deploy/wa-hub.hardening.conf.example \
+#       /etc/systemd/system/wa-hub.service.d/hardening.conf
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart wa-hub.service
+#   systemctl is-active wa-hub.service        # must say "active"
+#   journalctl -u wa-hub.service -n 30        # confirm no status=SYS / SIGSYS
+#
+# If the service fails to start (status=31/SYS), simply remove the drop-in:
+#
+#   sudo rm /etc/systemd/system/wa-hub.service.d/hardening.conf
+#   sudo systemctl daemon-reload && sudo systemctl restart wa-hub.service
+#
+# NOTE: this intentionally does NOT set MemoryDenyWriteExecute=yes — V8's JIT
+# needs writable+executable memory, so that directive would break Node.
+
+[Service]
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

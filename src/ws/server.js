@@ -1,26 +1,47 @@
 import { WebSocketServer } from 'ws';
-import { timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { state } from '../state.js';
+import { timingSafeStringEqual } from '../security/compare.js';
 
 const log = logger.child({ mod: 'ws' });
 
 function tokenMatches(provided) {
-  if (typeof provided !== 'string') return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(config.HUB_TOKEN);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return timingSafeStringEqual(typeof provided === 'string' ? provided : '', config.HUB_TOKEN);
+}
+
+/**
+ * Pull the token from, in order: Authorization: Bearer header (preferred — does
+ * not leak into URLs), then the ?token= query fallback (documented, but leaks
+ * into proxy/edge logs and browser history).
+ */
+function extractWsToken(req, url) {
+  const header = req.headers['authorization'] || '';
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  if (m) return m[1].trim();
+  return url.searchParams.get('token');
+}
+
+function originAllowed(req) {
+  if (config.WS_ALLOWED_ORIGINS.length === 0) return true; // no restriction configured
+  const origin = req.headers['origin'];
+  if (!origin) return true; // non-browser clients don't send Origin
+  return config.WS_ALLOWED_ORIGINS.includes(origin);
 }
 
 /**
  * Start a WebSocket broadcaster that pushes every Hub event in real time.
- * Auth: client sends ?token=... in the URL (Bearer over WS isn't standard).
+ * Binds to WS_HOST (loopback by default). Auth: Bearer header or ?token=.
  */
 export function startWsServer() {
-  const wss = new WebSocketServer({ port: config.WS_PORT, host: '0.0.0.0' });
-  log.info({ port: config.WS_PORT }, 'WebSocket server listening');
+  const wss = new WebSocketServer({
+    port: config.WS_PORT,
+    host: config.WS_HOST,
+    // Clients are receive-only; cap inbound frames so a client can't push large
+    // buffers at the 512 MB-capped process.
+    maxPayload: 4 * 1024,
+  });
+  log.info({ port: config.WS_PORT, host: config.WS_HOST }, 'WebSocket server listening');
 
   // A bind failure surfaces as an 'error' event; make it loud + fatal so systemd
   // restarts us rather than running with no WebSocket server.
@@ -30,9 +51,17 @@ export function startWsServer() {
   });
 
   wss.on('connection', (ws, req) => {
+    // Cap simultaneous clients so connection floods can't exhaust memory/FDs.
+    if (wss.clients.size > config.WS_MAX_CLIENTS) {
+      ws.close(1013, 'try_again_later');
+      return;
+    }
+    if (!originAllowed(req)) {
+      ws.close(4003, 'forbidden_origin');
+      return;
+    }
     const url = new URL(req.url, 'http://localhost');
-    const token = url.searchParams.get('token');
-    if (!tokenMatches(token)) {
+    if (!tokenMatches(extractWsToken(req, url))) {
       ws.close(4001, 'unauthorized');
       return;
     }
@@ -59,7 +88,9 @@ export function startWsServer() {
   const broadcast = (event, data) => {
     const payload = JSON.stringify({ event, timestamp: Date.now(), data });
     for (const client of wss.clients) {
-      if (client.readyState === 1) client.send(payload);
+      // Skip slow clients whose send buffer is backing up, so one stalled
+      // consumer can't balloon server memory.
+      if (client.readyState === 1 && client.bufferedAmount < 1 << 20) client.send(payload);
     }
   };
 

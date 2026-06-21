@@ -62,6 +62,14 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+// ─── Replay protection ─────────────────────────────────────────────────
+// A valid signed payload can be captured and re-POSTed. We reject deliveries
+// whose timestamp is outside a window, and dedup on the per-delivery id the Hub
+// sends. (This in-memory set resets on cold start — back it with a KV/Redis
+// store with TTL in production.)
+const MAX_SKEW_MS = 5 * 60 * 1000;
+const seenDeliveries = new Set<string>();
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {
     return new Response("method not allowed", { status: 405 });
@@ -75,6 +83,18 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (!safeEqual(given, expected)) {
     return new Response("invalid signature", { status: 401 });
+  }
+
+  // Reject stale (replayed) deliveries by timestamp …
+  const ts = Number(req.headers.get("x-hub-timestamp"));
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > MAX_SKEW_MS) {
+    return new Response("stale or missing timestamp", { status: 401 });
+  }
+  // … and dedup retries / replays by the per-delivery id.
+  const delivery = req.headers.get("x-hub-delivery") ?? "";
+  if (delivery) {
+    if (seenDeliveries.has(delivery)) return new Response("duplicate", { status: 200 });
+    seenDeliveries.add(delivery);
   }
 
   let event: HubEvent;

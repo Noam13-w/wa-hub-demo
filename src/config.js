@@ -4,8 +4,21 @@ import { z } from 'zod';
 const schema = z.object({
   HUB_NAME: z.string().min(1).default('wa-hub-demo'),
   HUB_TOKEN: z.string().min(16, 'HUB_TOKEN must be at least 16 chars'),
+  // Optional separate admin token. When set, destructive/config routes
+  // (POST /instance/logout, PUT /instance/webhook) additionally require it via
+  // the X-Admin-Token header — privilege separation from the send/read token.
+  ADMIN_TOKEN: z
+    .string()
+    .min(16, 'ADMIN_TOKEN must be at least 16 chars')
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   HUB_PORT: z.coerce.number().int().positive().default(3060),
   WS_PORT: z.coerce.number().int().positive().default(3061),
+  // Bind addresses. Default to loopback so the API/WS are reachable only via a
+  // reverse proxy / tunnel on the same host. Set to 0.0.0.0 to expose directly
+  // (then you MUST firewall the ports yourself).
+  HUB_HOST: z.string().min(1).default('127.0.0.1'),
+  WS_HOST: z.string().min(1).default('127.0.0.1'),
   WEBHOOK_SECRET: z.string().min(16, 'WEBHOOK_SECRET must be at least 16 chars'),
   WEBHOOK_URL: z
     .string()
@@ -20,6 +33,32 @@ const schema = z.object({
     .optional()
     .transform((v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [])),
   RATE_LIMIT_PER_MIN: z.coerce.number().int().nonnegative().default(120),
+  // Max concurrent media (image/file/audio) sends. Bounds peak memory from
+  // simultaneous multi-MB decodes/uploads. Excess requests queue, then 503.
+  MEDIA_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  // Max simultaneous WebSocket clients. Excess connections are closed (1013).
+  WS_MAX_CLIENTS: z.coerce.number().int().positive().default(64),
+  // Allow outbound webhook/media requests to private/loopback/link-local
+  // addresses. OFF by default (blocks SSRF to internal services & cloud
+  // metadata). Enable only if your webhook receiver runs on a private network.
+  ALLOW_PRIVATE_EGRESS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+  // Accept the API token via the ?token= query string on REST routes. OFF by
+  // default — URLs leak into proxy/access logs and browser history. The
+  // Authorization: Bearer header is always accepted.
+  ALLOW_QUERY_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+  // Optional comma-separated Origin allowlist for WebSocket clients. Empty =
+  // no Origin restriction (browser WS still needs the token, which a malicious
+  // site cannot read — so this is defense-in-depth, not the primary control).
+  WS_ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [])),
   // Trust X-Forwarded-* headers (enable only behind a reverse proxy / tunnel you
   // control, so the rate limiter sees real client IPs). Accepts true/1; else false.
   TRUST_PROXY: z
