@@ -61,19 +61,14 @@ Bare digits are normalized to `…@s.whatsapp.net`. Use country code without a l
 ```json
 {
   "ok": true,
-  "name": "wa-hub",
-  "version": "0.1.0",
-  "connection": "connected",
-  "qr": false,
-  "webhookConfigured": true,
-  "pendingDeliveries": 0,
-  "recentErrors": 0,
-  "recentWebhookFailures": 0,
-  "uptimeMs": 123456
+  "connection": "connected"
 }
 ```
 
-`connection` is one of `disconnected` | `connecting` | `qr` | `connected`. Use this for uptime monitors.
+`connection` is one of `disconnected` | `connecting` | `qr` | `connected`. Use this for uptime
+monitors. Richer operational state (version, queue depths, error counts, uptime, paired device)
+lives behind the token at [`GET /api/instance/status`](#get-apiinstancestatus) and
+[`/api/instance/diagnose`](#get-apiinstancediagnose) — it's deliberately kept off the open endpoint.
 
 ---
 

@@ -68,10 +68,13 @@ two subscribers. Adding a third consumer (e.g. a metrics sink) is one `state.on(
 
 ## Security posture
 
-- **Bearer auth** (constant-time) on every `/api/*` route + per-minute rate limit.
-- **Webhooks are signed** (`HMAC-SHA256`, `x-hub-signature`); receivers must verify over the raw body.
-- **Loopback by default.** The Hub binds `0.0.0.0` but the firewall (ufw) only opens SSH; public access
-  is via Cloudflare Tunnel, so no inbound port is exposed.
+- **Bearer auth** (constant-time, no length leak) on every `/api/*` route + per-client-IP rate limit.
+- **Webhooks are signed** (`HMAC-SHA256`, `x-hub-signature`, plus `x-hub-timestamp`/`x-hub-delivery`
+  for replay protection); receivers must verify over the raw body.
+- **SSRF egress guard.** Outbound webhook + media-URL fetches are `http(s)`-only and refuse
+  private/loopback/link-local/metadata targets (checked at the connected IP → DNS-rebinding-safe).
+- **Loopback by default.** REST `:3060` and WS `:3061` bind `127.0.0.1` (`HUB_HOST`/`WS_HOST`); public
+  access is via Cloudflare Tunnel, so no inbound port is exposed. The installer's ufw opens only SSH.
 - **Hardened systemd unit** (`deploy/wa-hub.service`): `NoNewPrivileges`, `ProtectSystem=strict`,
   empty `CapabilityBoundingSet`, `MemoryMax=512M`, etc. (`SystemCallFilter` is intentionally left unset
   because Node 20+ uses syscalls the strict allow-list blocks — see the comment in the unit.)
