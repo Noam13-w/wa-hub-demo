@@ -16,12 +16,31 @@ you're starting from scratch. This file is the "I already know my way around a s
 
 All three install the **same** hardened `deploy/wa-hub.service`.
 
+### Fresh box vs. existing server (host hardening)
+
+The installer's **host-hardening** steps — `ufw --force reset` to deny-all-but-SSH, disabling SSH
+password auth, and `apt dist-upgrade` — run **only when the box looks clearly fresh**. On a server
+that already runs other services (active `ufw`, SSH on a non-22 port, or any non-loopback listener)
+the installer auto-selects **safe mode** and modifies **none** of them. wa-hub binds loopback and is
+reached via the **outbound** tunnel, so it needs no inbound ports regardless. Override the auto choice:
+
+| Value | Effect |
+|---|---|
+| `WA_HUB_HARDEN=auto` | *(default)* full hardening only on a clearly-fresh box, else safe |
+| `WA_HUB_HARDEN=full` | force fresh-box hardening (resets `ufw`, sshd password-auth off, dist-upgrade) |
+| `WA_HUB_HARDEN=safe` | never touch the firewall / sshd / system upgrade — just install wa-hub |
+
+```bash
+# Example: install on an existing production server without touching its firewall
+curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | sudo WA_HUB_HARDEN=safe bash
+```
+
 ## What the server ends up with
 
 - Node 20, a `wahub` system user, the repo at `/srv/wa-hub-demo`, deps installed reproducibly (`npm ci --omit=dev --ignore-scripts`).
 - `/srv/wa-hub-demo/.env` (`chmod 600`, owned by `wahub`) with random `HUB_TOKEN` + `WEBHOOK_SECRET`.
 - `wa-hub.service` (REST `:3060`, WS `:3061`, loopback) — `Restart=always`, `MemoryMax=512M`.
-- ufw: only `22/tcp` open; fail2ban active; SSH key-only.
+- **Fresh box only:** `ufw` reset so only SSH is open, fail2ban active, SSH password-auth disabled. On an existing server these are left as-is.
 - Cloudflare Tunnel exposing `:3060` over HTTPS (Quick or Named).
 
 ## Tunnel: Quick vs Named

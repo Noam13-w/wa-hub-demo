@@ -62,6 +62,12 @@ secrets, and brings up a **Cloudflare Tunnel** with a public HTTPS URL. When it 
 prints a **`…/pair`** link — open it in a browser to scan the QR (it refreshes itself and
 flips to “Linked” automatically). Done.
 
+> 🛡️ **Already have services on this server? You're safe.** The host-hardening steps (firewall
+> reset, sshd changes, dist-upgrade) run **only on a clearly fresh box**. If the installer sees an
+> active `ufw`, SSH on a non-22 port, or any other listening service, it switches to **safe mode**
+> and touches **none** of them — wa-hub binds loopback and is reached via the outbound tunnel, so
+> it needs no open ports. Force the choice with `WA_HUB_HARDEN=full` or `WA_HUB_HARDEN=safe`.
+
 > 📘 **Prefer to understand each step?** The full "buy a server → live API in 45 minutes"
 > walkthrough — **[English](docs/BUILD_GUIDE_EN.md)** · **[עברית](docs/BUILD_GUIDE_HE.md)** —
 > covers VPS purchase, SSH hardening, the manual install, pairing, Cloudflare Tunnel, and a

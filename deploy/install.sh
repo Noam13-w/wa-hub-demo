@@ -3,15 +3,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Bootstraps a fresh Ubuntu 24.04 server (x86 or ARM) into a fully working
 # WhatsApp HTTP API in ~3 minutes, including:
-#   • System update + SSH hardening + ufw + fail2ban
+#   • System update + SSH hardening + ufw + fail2ban   (FRESH boxes only — see below)
 #   • Node 20 + service user + repo clone + npm install
 #   • Random HUB_TOKEN + WEBHOOK_SECRET generation
 #   • systemd unit with seccomp-safe hardening
 #   • Cloudflare Tunnel (Quick mode) + systemd unit
 #   • Final summary: public URL, token, secret
 #
-# Usage (as root on a fresh server):
-#   curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | bash
+# Usage (as root):
+#   curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | sudo bash
+#
+# EXISTING SERVERS ARE SAFE: the host-hardening steps (firewall reset, sshd
+# changes, dist-upgrade) run ONLY when the box looks clearly fresh. If anything
+# else is already running (active ufw, non-22 SSH, other listening ports), the
+# installer switches to SAFE mode and touches NONE of them — wa-hub binds
+# loopback and is reached via the outbound tunnel, so it needs no open ports.
+# Override the choice explicitly with  WA_HUB_HARDEN=full  or  WA_HUB_HARDEN=safe.
 #
 # Re-running is mostly idempotent (won't re-generate secrets if .env exists).
 
@@ -34,18 +41,74 @@ fail()  { echo -e "  ${RED}✗${RESET} $*"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 
+# ─── Hardening mode — protect EXISTING servers ───────────────────────────────
+# This installer was built for a FRESH, dedicated box, where it hardens the host
+# (resets ufw to deny-all-but-SSH, disables SSH password auth, dist-upgrades).
+# On a server that ALREADY runs other services, doing that would wipe the
+# firewall (blocking the existing services — and locking SSH out entirely if SSH
+# isn't on port 22) and rewrite sshd. So we choose a mode automatically, BIASED
+# toward "safe", overridable with WA_HUB_HARDEN:
+#   full → fresh-box hardening (ufw reset, sshd password-auth off, dist-upgrade)
+#   safe → touch NOTHING destructive. wa-hub binds loopback (127.0.0.1) and is
+#          reached via the OUTBOUND Cloudflare Tunnel, so it needs no open ports.
+#   auto → (default) full only when the box looks clearly fresh.
+
+# Detect the SSH port we're actually on, so we never assume 22 and lock anyone out.
+SSH_PORT=22
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  _p="$(awk '{print $4}' <<<"$SSH_CONNECTION" || true)"
+  [[ "$_p" =~ ^[0-9]+$ ]] && SSH_PORT="$_p"
+else
+  _p="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}' || true)"
+  [[ "$_p" =~ ^[0-9]+$ ]] && SSH_PORT="$_p"
+fi
+
+looks_fresh() {
+  # Not fresh if ufw is already active …
+  ufw status 2>/dev/null | grep -qi 'Status: active' && return 1
+  # … or SSH isn't on the default port …
+  [[ "$SSH_PORT" != "22" ]] && return 1
+  # … or anything listens on a non-loopback address on a port other than 22.
+  local extra
+  extra="$(ss -ltnH 2>/dev/null | awk '{print $4}' \
+            | grep -vE '^(127\.|\[::1\]|::1|\[::ffff:127)' | grep -vE ':22$' | head -1 || true)"
+  [[ -n "$extra" ]] && return 1
+  return 0
+}
+
+HARDEN_MODE="${WA_HUB_HARDEN:-auto}"
+case "$HARDEN_MODE" in
+  full|safe) ;;
+  *) if looks_fresh; then HARDEN_MODE=full; else HARDEN_MODE=safe; fi ;;
+esac
+
+if [[ "$HARDEN_MODE" == "safe" ]]; then
+  step "Mode: SAFE — existing server detected (or WA_HUB_HARDEN=safe)"
+  warn "Your firewall and SSH config will NOT be modified, and the system won't be dist-upgraded."
+  warn "wa-hub listens only on loopback and reaches the internet via the outbound tunnel — it needs no open ports."
+  warn "To force full fresh-box hardening, re-run with:  WA_HUB_HARDEN=full"
+else
+  step "Mode: FULL — fresh-box hardening (SSH port $SSH_PORT)"
+fi
+
 # ─── 1. System update + base packages ────────────────────────────────────────
 step "[1/8] Updating system and installing base packages"
 apt-get update -qq
-apt-get -y -qq dist-upgrade >/dev/null
+# Full system upgrade only on a fresh box — a dist-upgrade can restart services
+# or pull a new kernel, which we must not do unasked-for on an existing server.
+if [[ "$HARDEN_MODE" == "full" ]]; then
+  apt-get -y -qq dist-upgrade >/dev/null
+fi
 apt-get install -y -qq curl git build-essential ufw fail2ban ca-certificates openssl >/dev/null
 ok "base packages installed"
 
 # ─── 2. SSH hardening (key only, no root password) ───────────────────────────
 step "[2/8] Hardening SSH"
+if [[ "$HARDEN_MODE" == "safe" ]]; then
+  ok "skipped — leaving your SSH configuration untouched (safe mode)"
 # Only disable password auth if an SSH key is already authorized — otherwise we
 # would lock the operator out of a password-only server.
-if [[ -s /root/.ssh/authorized_keys ]] || ls /home/*/.ssh/authorized_keys >/dev/null 2>&1; then
+elif [[ -s /root/.ssh/authorized_keys ]] || ls /home/*/.ssh/authorized_keys >/dev/null 2>&1; then
   sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
   sed -i 's/^#*PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
   sed -i 's/^#*PermitEmptyPasswords .*/PermitEmptyPasswords no/' /etc/ssh/sshd_config
@@ -58,15 +121,27 @@ fi
 
 # ─── 3. Firewall ─────────────────────────────────────────────────────────────
 step "[3/8] Configuring firewall (ufw)"
-ufw --force reset >/dev/null
-ufw default deny incoming >/dev/null
-ufw default allow outgoing >/dev/null
-ufw allow 22/tcp comment 'SSH' >/dev/null
-# `ufw --force enable` skips the interactive prompt without piping `yes` — under
-# `set -o pipefail`, `yes | ufw enable` aborts the script (yes gets SIGPIPE when
-# ufw closes the pipe after reading one line).
-ufw --force enable >/dev/null
-ok "ufw active — only port 22 (SSH) open to internet"
+if [[ "$HARDEN_MODE" == "safe" ]]; then
+  # NEVER reset an existing firewall — that would block the server's other
+  # services and could lock SSH out. wa-hub needs no inbound ports anyway.
+  if ufw status 2>/dev/null | grep -qi 'Status: active'; then
+    ufw allow "$SSH_PORT"/tcp comment 'SSH (ensured by wa-hub)' >/dev/null 2>&1 || true
+    ok "firewall left intact — ensured SSH (port $SSH_PORT) stays allowed"
+  else
+    ok "firewall left untouched (ufw inactive; wa-hub opens no ports)"
+  fi
+else
+  # Fresh box: deny everything inbound except SSH (on its real port).
+  ufw --force reset >/dev/null
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  ufw allow "$SSH_PORT"/tcp comment 'SSH' >/dev/null
+  # `ufw --force enable` skips the interactive prompt without piping `yes` — under
+  # `set -o pipefail`, `yes | ufw enable` aborts the script (yes gets SIGPIPE when
+  # ufw closes the pipe after reading one line).
+  ufw --force enable >/dev/null
+  ok "ufw active — only SSH (port $SSH_PORT) open to internet"
+fi
 
 # ─── 4. fail2ban ─────────────────────────────────────────────────────────────
 step "[4/8] Enabling fail2ban"
