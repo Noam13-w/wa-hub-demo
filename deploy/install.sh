@@ -198,24 +198,30 @@ fi
 echo
 echo -e "${BOLD}Next steps:${RESET}"
 echo
-if [[ "$TOKDISP" == '$HUB_TOKEN' ]]; then
-  echo -e "  ${BOLD}0. On your local machine, load the token into your shell:${RESET}"
-  echo -e "       ${CYAN}export HUB_TOKEN=<paste HUB_TOKEN from the server's .env>${RESET}"
-  echo
-fi
-echo -e "  ${BOLD}1. Pair WhatsApp.${RESET} On your local machine (PowerShell or terminal):"
+echo -e "  ${BOLD}1. Pair WhatsApp — open the live QR page in your browser:${RESET}"
 echo
+if [[ -n "$TUNNEL_URL" ]]; then
+  if [[ -t 1 ]]; then
+    echo -e "       ${CYAN}${TUNNEL_URL}/pair#${HUB_TOKEN}${RESET}"
+    echo -e "       (one-click — the token rides in the URL #fragment, which never leaves your browser)"
+  else
+    echo -e "       ${CYAN}${TUNNEL_URL}/pair${RESET}  — then paste your HUB_TOKEN when asked"
+  fi
+else
+  echo -e "       ${CYAN}\$TUNNEL_URL/pair${RESET}  — then paste your HUB_TOKEN when asked"
+fi
+echo
+echo -e "       The QR refreshes itself and flips to “Linked” automatically when you scan"
+echo -e "       (WhatsApp → Settings → Linked Devices → Link a Device)."
+echo
+echo -e "       ${BOLD}Headless alternative${RESET} (no browser) — fetch the QR as a PNG:"
 if [[ -n "$TUNNEL_URL" ]]; then
   echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer $TOKDISP\" $TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
 else
   echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer \$HUB_TOKEN\" \$TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
 fi
 echo
-echo -e "       (or fetch qr.png via SCP from this server — see guide section 5)"
-echo
-echo -e "  ${BOLD}2. Open qr.png and scan from WhatsApp${RESET} → Settings → Linked Devices → Link Device."
-echo
-echo -e "  ${BOLD}3. Send a test message:${RESET}"
+echo -e "  ${BOLD}2. Send a test message:${RESET}"
 if [[ -n "$TUNNEL_URL" ]]; then
   echo -e "       ${CYAN}curl -X POST -H \"Authorization: Bearer $TOKDISP\" \\${RESET}"
   echo -e "       ${CYAN}     -H 'Content-Type: application/json' \\${RESET}"

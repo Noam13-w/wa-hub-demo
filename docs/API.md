@@ -27,7 +27,17 @@ header too (preferred), or `?token=` as a fallback.
 - **Admin routes.** When `ADMIN_TOKEN` is set, `POST /api/instance/logout` and `PUT /api/instance/webhook` additionally require an `X-Admin-Token: <ADMIN_TOKEN>` header.
 - **Outbound egress (webhook + media URLs).** `http(s)` only, and private/loopback/link-local targets (incl. `169.254.169.254`) are refused to prevent SSRF. Override with `ALLOW_PRIVATE_EGRESS=true` if your receiver is on a private network.
 
-The only **open** endpoint (no token) is `GET /healthz`, which returns just `{ "ok": true, "connection": "..." }`.
+**Open** endpoints (no token): `GET /healthz` (returns just `{ "ok": true, "connection": "..." }`)
+and `GET /pair` (a live pairing page — see [Pairing](#pairing) below; the page itself is public but
+carries no secret and fetches the token-gated QR with a token you supply in the browser).
+
+### Pairing
+
+Open **`<base-url>/pair`** in a browser. Paste your `HUB_TOKEN` when asked (or open
+`<base-url>/pair#<HUB_TOKEN>` — the `#fragment` is never sent to the server/logs). The page shows the
+QR, **refreshes it automatically** (~every 20 s) and flips to “Linked” the moment you scan it from
+WhatsApp → Settings → Linked Devices → Link a Device. Headless alternative: `GET /api/instance/qr.png`
+(token required) or the `GET /api/instance/qr` JSON.
 
 ### Recipient (`to`) formats accepted
 

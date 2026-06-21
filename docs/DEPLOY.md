@@ -62,7 +62,7 @@ All three install the **same** hardened `deploy/wa-hub.service`.
 | Restart | `systemctl restart wa-hub` |
 | Health | `curl -s http://127.0.0.1:3060/healthz` |
 | Self-test | `curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3060/api/instance/diagnose` |
-| Re-pair | `POST /api/instance/logout` then scan a fresh QR |
+| Pair / re-pair | Open `<tunnel-url>/pair` in a browser (live, auto-refreshing QR). To re-pair: `POST /api/instance/logout`, then reload `/pair`. |
 | Rotate token | edit `HUB_TOKEN` in `.env` → `systemctl restart wa-hub` → update consumers (~30 s downtime) |
 
 ## Monitoring & backup

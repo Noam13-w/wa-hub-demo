@@ -1,9 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { apiRateLimit, healthRateLimit, requireAuth } from '../auth.js';
 import { state } from '../state.js';
 import { recordError } from '../diagnostics.js';
+import { pairPageHtml } from './pairPage.js';
 import { instanceRouter } from './routes/instance.js';
 import { messagesRouter } from './routes/messages.js';
 import { groupsRouter } from './routes/groups.js';
@@ -57,6 +59,24 @@ export function buildApp() {
     res.setHeader('content-security-policy', STRICT_CSP);
     res.setHeader('x-content-type-options', 'nosniff');
     res.json({ ok: true, connection: state.connection });
+  });
+
+  // Public live-pairing page. Carries no secret — the browser supplies the
+  // token (pasted, or via the URL #fragment which is never sent to the server)
+  // and polls the token-gated /api/instance/* endpoints itself. A per-request
+  // nonce keeps the inline script/style strict (no 'unsafe-inline').
+  app.get('/pair', healthRateLimit, (_req, res) => {
+    const nonce = randomBytes(16).toString('base64');
+    res.setHeader(
+      'content-security-policy',
+      `default-src 'none'; img-src 'self' data:; style-src 'nonce-${nonce}'; ` +
+        `script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; ` +
+        `form-action 'none'; frame-ancestors 'none'`,
+    );
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('referrer-policy', 'no-referrer');
+    res.setHeader('cache-control', 'no-store');
+    res.type('html').send(pairPageHtml(nonce));
   });
 
   // ── Authenticated API ─────────────────────────────────────────────────

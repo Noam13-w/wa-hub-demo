@@ -6,6 +6,15 @@ Remediation of an authorized 10-surface grey-box penetration test. Closes the
 SSRF and availability findings and tightens auth, transport, and deploy posture.
 A few **behavior changes** are noted as ⚠ below.
 
+### Added
+
+- **Live pairing page** at `GET /pair` (public shell, no secret). Open it in a
+  browser, supply the token (pasted, or via the URL `#fragment` which never
+  reaches the server), and it shows a **self-refreshing QR** that flips to
+  “Linked” automatically on scan. A per-request CSP nonce keeps the inline
+  script/style strict. The installer now prints this link as the primary pairing
+  path; `qr.png` remains as a headless fallback.
+
 ### Security — SSRF egress controls (the headline fix)
 
 - **New shared egress guard** (`src/net/egress.js`) applied to BOTH outbound
