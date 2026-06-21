@@ -1,0 +1,18 @@
+node_modules/
+.env
+.env.local
+data/
+*.log
+.DS_Store
+.idea/
+.vscode/
+coverage/
+dist/
+
+# Local agent / session / scratch artifacts — never publish
+.claude-session.md
+.claude/
+*.tmp
+.smoke-data/
+# Pre-publication audit notes — kept local, not part of the public product
+SECURITY_REPORT.md

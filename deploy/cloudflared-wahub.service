@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare Quick Tunnel for wa-hub
+After=network-online.target wa-hub.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3060
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target
