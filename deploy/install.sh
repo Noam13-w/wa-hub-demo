@@ -62,7 +62,10 @@ ufw --force reset >/dev/null
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 ufw allow 22/tcp comment 'SSH' >/dev/null
-yes | ufw enable >/dev/null
+# `ufw --force enable` skips the interactive prompt without piping `yes` — under
+# `set -o pipefail`, `yes | ufw enable` aborts the script (yes gets SIGPIPE when
+# ufw closes the pipe after reading one line).
+ufw --force enable >/dev/null
 ok "ufw active — only port 22 (SSH) open to internet"
 
 # ─── 4. fail2ban ─────────────────────────────────────────────────────────────
@@ -164,8 +167,10 @@ systemctl enable --now cloudflared-wahub.service >/dev/null
 # Wait for the tunnel URL to appear in the journal (Quick Tunnel returns within ~5s)
 TUNNEL_URL=""
 for _ in 1 2 3 4 5 6 7 8 9 10; do
+  # `|| true` so a not-yet-present URL (grep exit 1) doesn't abort the script
+  # under `set -o pipefail` before the tunnel has had time to come up.
   TUNNEL_URL=$(journalctl -u cloudflared-wahub.service --no-pager 2>/dev/null \
-                | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1)
+                | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1 || true)
   [[ -n "$TUNNEL_URL" ]] && break
   sleep 2
 done

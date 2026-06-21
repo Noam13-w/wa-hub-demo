@@ -48,12 +48,26 @@
 
 ## התחלה מהירה
 
-> 📘 **למדריך "קונים שרת → API חי תוך 45 דקות" צעד-אחר-צעד**,
-> קראו את המדריך המלא — **[עברית](docs/BUILD_GUIDE_HE.md)** · **[English](docs/BUILD_GUIDE_EN.md)**.
-> הוא מכסה רכישת VPS, הקשחת SSH, התקנה ידנית, פיירינג, Cloudflare Tunnel,
-> ודוגמת אינטגרציה ל-Base44.
+### פקודה אחת — שרת חי תוך ~3 דקות
 
-לחסרי-סבלנות — מקומית, רק כדי לבדוק:
+על מכונת **Ubuntu 24.04 נקייה** (VPS ב-4€ לחודש, או כל מכונת לינוקס פנויה), כ-root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | sudo bash
+```
+
+הפקודה הזו מעדכנת ומקשיחה את המכונה (SSH, `ufw`, `fail2ban`), מתקינה Node 20, יוצרת
+משתמש-שירות, מתקינה את ה-Hub כשירות `systemd` מוקשח, מייצרת סודות אקראיים, ומעלה
+**Cloudflare Tunnel** עם כתובת HTTPS ציבורית. בסוף היא מדפיסה קישור **`…/pair`** —
+פותחים אותו בדפדפן, סורקים את ה-QR (שמתרענן לבד ומתחלף ל"מחובר" אוטומטית), וזהו.
+
+> 📘 **מעדיפים להבין כל שלב?** המדריך המלא "קונים שרת → API חי תוך 45 דקות" —
+> **[עברית](docs/BUILD_GUIDE_HE.md)** · **[English](docs/BUILD_GUIDE_EN.md)** — מכסה רכישת
+> VPS, הקשחת SSH, התקנה ידנית, פיירינג, Cloudflare Tunnel, ודוגמת אינטגרציה ל-Base44.
+
+### הרצה מקומית — רק כדי לבדוק
+
+לחסרי-סבלנות — מקומית, בלי שרת:
 
 ```bash
 git clone https://github.com/Noam13-w/wa-hub-demo.git
@@ -85,11 +99,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## ה-API במבט מהיר
 
-כל ה-endpoints תחת `/api/*` דורשים `Authorization: Bearer <HUB_TOKEN>`.
+כל ה-endpoints תחת `/api/*` דורשים `Authorization: Bearer <HUB_TOKEN>` (header בלבד כברירת מחדל;
+`?token=` כבוי אלא אם `ALLOW_QUERY_TOKEN=true`).
 
 | Method | Path | מה זה עושה |
 |---|---|---|
-| `GET`  | `/healthz` | בדיקת חיות (ללא auth). מחזיר `connection`, `qr`, `webhookConfigured`, `pendingDeliveries`, `recentErrors`, `version`, `uptimeMs` |
+| `GET`  | `/healthz` | בדיקת חיות (ללא auth). מחזיר רק `{ ok, connection }` — מצב מפורט נמצא מאחורי ה-token ב-`/api/instance/status` |
+| `GET`  | `/pair` | דף פיירינג חי (הדף ללא auth; נתוני ה-QR שהוא טוען דורשים token) — פותחים בדפדפן |
 | `GET`  | `/api/instance/status` | מצב חיבור + פרטי המכשיר המצומד |
 | `GET`  | `/api/instance/qr` | ה-QR הנוכחי (JSON, base64) |
 | `GET`  | `/api/instance/qr.png` | ה-QR הנוכחי (PNG גולמי, נפתח בדפדפן) |
@@ -166,14 +182,23 @@ wa-hub-demo/
 
 ## מודל אבטחה
 
-- **Bearer auth** — בכל ה-endpoints תחת `/api/*`. ה-token מושווה ב-constant-time.
-- **Webhooks חתומים ב-HMAC** — ה-payloads היוצאים נושאים `X-Hub-Signature`. אמתו אותו.
-- **Loopback כברירת מחדל** — ה-listener מאזין ל-`0.0.0.0`, אבל `ufw` אמור לחסום את `:3060`
-  מהאינטרנט. השתמשו ב-Cloudflare Tunnel (או nginx + Let's Encrypt + allowlist).
-- **הקשחת systemd** — `NoNewPrivileges`, `ProtectSystem=strict`, `CapabilityBoundingSet=`,
-  `MemoryMax=512M` ועוד.
-- **Rate-limit** — לכל token, ניתן להגדרה (`RATE_LIMIT_PER_MIN`).
-- **אין סודות בקוד** — הכל ב-`.env`, שנמצא ב-gitignore.
+- **Bearer auth** — בכל ה-endpoints תחת `/api/*`. ה-token מושווה ב-constant-time וללא דליפת אורך.
+  ברירת המחדל היא header בלבד (`?token=` כבוי אלא אם `ALLOW_QUERY_TOKEN=true`).
+- **token אדמין אופציונלי** — `ADMIN_TOKEN` מחייב header נוסף `X-Admin-Token` במסלולים ההרסניים
+  (`POST /instance/logout`, `PUT /instance/webhook`).
+- **Webhooks חתומים ב-HMAC** — ה-payloads נושאים `X-Hub-Signature`, וגם `X-Hub-Timestamp`
+  ו-`X-Hub-Delivery` להגנת replay. אמתו אותם.
+- **הגנת SSRF ביציאה** — כתובת ה-webhook ושליפת מדיה-לפי-URL הן `http(s)` בלבד, ודוחות יעדים
+  פרטיים/loopback/link-local/metadata (אימות לפי ה-IP שאליו באמת התחברנו → גם DNS rebinding חסום).
+  לעקיפה: `ALLOW_PRIVATE_EGRESS=true`.
+- **Loopback כברירת מחדל** — REST `:3060` ו-WS `:3061` מאזינים ל-`127.0.0.1` (`HUB_HOST`/`WS_HOST`);
+  גישה דרך ה-Cloudflare Tunnel. הגדירו `0.0.0.0` רק אם תחסמו את הפורטים בעצמכם. ה-`ufw` של המתקין פותח רק `:22`.
+- **Rate-limit** — לכל **כתובת IP**, ניתן להגדרה (`RATE_LIMIT_PER_MIN`); מאחורי tunnel הגדירו
+  `TRUST_PROXY=true` כדי שיזהה את הלקוח האמיתי.
+- **הקשחת systemd** — `NoNewPrivileges`, `ProtectSystem=strict`, `CapabilityBoundingSet=` (ריק),
+  `MemoryMax=512M` ועוד. מסנן seccomp מסופק כ-drop-in **opt-in**
+  ([`deploy/wa-hub.hardening.conf.example`](deploy/wa-hub.hardening.conf.example)).
+- **אין סודות בקוד** — הכל ב-`.env` (mode 600, ב-gitignore). המתקין לא מדפיס סודות ללוג מצונרר.
 
 ## הגדרות
 

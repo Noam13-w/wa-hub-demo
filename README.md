@@ -48,12 +48,28 @@ If you need a contractual uptime SLA without doing ops work yourself — use a m
 
 ## Quickstart
 
-> 📘 **For a step-by-step "buy a server → live API in 45 minutes" walkthrough**,
-> read the full build guide — **[English](docs/BUILD_GUIDE_EN.md)** · **[עברית](docs/BUILD_GUIDE_HE.md)**.
-> It covers VPS purchase, SSH hardening, manual install, pairing, Cloudflare Tunnel,
-> and a Base44 integration example.
+### One command — a live server in ~3 minutes
 
-For the impatient — locally, just to test:
+On a **fresh Ubuntu 24.04** box (a €4/mo VPS, or any spare Linux machine), as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/install.sh | sudo bash
+```
+
+That single command updates + hardens the box (SSH, `ufw`, `fail2ban`), installs Node 20,
+creates a service user, installs the Hub as a hardened `systemd` service, generates random
+secrets, and brings up a **Cloudflare Tunnel** with a public HTTPS URL. When it finishes it
+prints a **`…/pair`** link — open it in a browser to scan the QR (it refreshes itself and
+flips to “Linked” automatically). Done.
+
+> 📘 **Prefer to understand each step?** The full "buy a server → live API in 45 minutes"
+> walkthrough — **[English](docs/BUILD_GUIDE_EN.md)** · **[עברית](docs/BUILD_GUIDE_HE.md)** —
+> covers VPS purchase, SSH hardening, the manual install, pairing, Cloudflare Tunnel, and a
+> Base44 integration example.
+
+### Run it locally — just to test
+
+For the impatient — locally, no server:
 
 ```bash
 git clone https://github.com/Noam13-w/wa-hub-demo.git
@@ -85,11 +101,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## API at a glance
 
-All `/api/*` endpoints require `Authorization: Bearer <HUB_TOKEN>`.
+All `/api/*` endpoints require `Authorization: Bearer <HUB_TOKEN>` (header only by default;
+the `?token=` query form is off unless `ALLOW_QUERY_TOKEN=true`).
 
 | Method | Path | What it does |
 |---|---|---|
-| `GET`  | `/healthz` | Liveness check (no auth). Returns `connection`, `qr`, `webhookConfigured`, `pendingDeliveries`, `recentErrors`, `recentWebhookFailures`, `version`, `uptimeMs` |
+| `GET`  | `/healthz` | Liveness check (no auth). Returns just `{ ok, connection }` — richer state is behind the token at `/api/instance/status` |
+| `GET`  | `/pair` | Live pairing page (no auth on the page; the QR data it loads needs the token) — open in a browser |
 | `GET`  | `/api/instance/status` | Connection state + paired device info |
 | `GET`  | `/api/instance/qr` | Current QR (JSON, base64) |
 | `GET`  | `/api/instance/qr.png` | Current QR (raw PNG, openable in browser) |
@@ -160,14 +178,21 @@ wa-hub-demo/
 │   ├── config.js             ← env validation (zod)
 │   ├── logger.js             ← pino
 │   ├── state.js              ← singleton state + event bus
-│   ├── webhook.js            ← outbound webhook dispatcher (signed)
-│   ├── auth.js               ← Bearer middleware + rate limit
+│   ├── webhook.js            ← outbound webhook dispatcher (signed, SSRF-guarded)
+│   ├── auth.js               ← Bearer middleware + admin gate + rate limit
+│   ├── net/
+│   │   └── egress.js         ← SSRF egress guard (scheme/IP allowlist, anti-rebinding)
+│   ├── security/
+│   │   └── compare.js        ← constant-time, length-leak-free token compare
+│   ├── util/
+│   │   └── gate.js           ← media concurrency limiter (memory bound)
 │   ├── baileys/
 │   │   ├── socket.js         ← Baileys lifecycle (connect, reconnect, QR)
 │   │   ├── normalize.js      ← convert raw Baileys messages → clean JSON
 │   │   └── jid.js            ← JID utilities (number → JID)
 │   ├── rest/
 │   │   ├── server.js         ← express app
+│   │   ├── pairPage.js       ← live self-refreshing QR pairing page (GET /pair)
 │   │   └── routes/
 │   │       ├── instance.js   ← status, QR, webhook config, logout
 │   │       ├── messages.js   ← send text/image/file/audio/location/reaction
@@ -177,7 +202,8 @@ wa-hub-demo/
 │       └── server.js         ← WebSocket broadcaster
 ├── deploy/
 │   ├── wa-hub.service        ← hardened systemd unit
-│   ├── install.sh            ← optional one-command installer
+│   ├── wa-hub.hardening.conf.example ← opt-in seccomp drop-in
+│   ├── install.sh            ← one-command installer
 │   └── cloudflared-setup.sh  ← Cloudflare Tunnel helper
 ├── docs/
 │   ├── BUILD_GUIDE_HE.md     ← the full webinar walkthrough (Hebrew)
@@ -190,15 +216,27 @@ wa-hub-demo/
 
 ## Security model
 
-- **Bearer auth** — all `/api/*` endpoints. Token is compared in constant time.
-- **HMAC-signed webhooks** — outbound payloads carry `X-Hub-Signature`. Verify it.
-- **Loopback-only by default** — the listener binds to `0.0.0.0`, but `ufw` should
-  block `:3060` from the internet. Use Cloudflare Tunnel (or nginx + Let's Encrypt
-  + IP allowlist) to expose it.
+- **Bearer auth** — all `/api/*` endpoints. Token is compared in constant time with no
+  length side-channel. Header-only by default (`?token=` is opt-in via `ALLOW_QUERY_TOKEN`).
+- **Optional admin token** — set `ADMIN_TOKEN` to require an extra `X-Admin-Token` header on
+  the destructive/config routes (`POST /instance/logout`, `PUT /instance/webhook`).
+- **HMAC-signed webhooks** — outbound payloads carry `X-Hub-Signature`, plus `X-Hub-Timestamp`
+  and `X-Hub-Delivery` for replay protection. Verify them (see the reference receiver).
+- **SSRF egress guard** — the webhook URL and media-by-URL fetches are `http(s)`-only and
+  refuse private/loopback/link-local/metadata targets (validated at the actual connected IP,
+  so DNS rebinding is blocked). Override with `ALLOW_PRIVATE_EGRESS=true` for internal receivers.
+- **Loopback by default** — REST `:3060` and WS `:3061` bind `127.0.0.1` (`HUB_HOST`/`WS_HOST`);
+  reach them via the Cloudflare Tunnel (or a reverse proxy). Set `0.0.0.0` only if you firewall
+  the ports yourself. The installer's `ufw` opens only `:22`.
+- **Rate-limited** — per **client IP**, configurable (`RATE_LIMIT_PER_MIN`); behind the tunnel
+  set `TRUST_PROXY=true` so it keys on the real caller. `/healthz` is rate-limited too.
 - **systemd hardening** — `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=tmpfs`,
-  `CapabilityBoundingSet=`, `SystemCallFilter=@system-service`, `MemoryMax=512M`.
-- **Rate-limited** — per-token, configurable (`RATE_LIMIT_PER_MIN`).
-- **No secrets in code** — everything in `.env`, which is gitignored.
+  `CapabilityBoundingSet=` (empty), `RestrictAddressFamilies`, `MemoryMax=512M`, and more. A
+  seccomp `SystemCallFilter` is shipped as an **opt-in** drop-in
+  ([`deploy/wa-hub.hardening.conf.example`](deploy/wa-hub.hardening.conf.example)) — off by
+  default because some Node/systemd combos `SIGSYS`-crash under it.
+- **No secrets in code** — everything in `.env` (mode 600, gitignored). The installer never
+  prints secrets into a piped/CI log.
 
 ## Configuration
 
@@ -224,8 +262,9 @@ hardening pass already implemented — verify each one in your environment.
 
 ### 1. Boot & connectivity
 
-- [ ] `curl http://localhost:3060/healthz` returns `{ ok: true }` with a valid
-      `version` and `connection: "connected"`.
+- [ ] `curl http://localhost:3060/healthz` returns `{ ok: true, connection: "connected" }`.
+      (Richer state — version, queue depths, uptime — is behind the token at
+      `/api/instance/status`.)
 - [ ] `curl -H "Authorization: Bearer $TOKEN" http://localhost:3060/api/instance/diagnose`
       returns `summary: "pass"`. If `degraded` or `fail`, the JSON tells you which
       check failed (internet, auth-dir, env, socket).
