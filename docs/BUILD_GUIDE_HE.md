@@ -9,6 +9,8 @@
 > **זמן ביצוע:** ~45 דקות בידיים. **עלות:** €3.79–€3.99 לחודש (Hetzner CAX11 או CX23).
 > **רישיון:** MIT. **קוד מקור:** [github.com/Noam13-w/wa-hub-demo](https://github.com/Noam13-w/wa-hub-demo)
 
+> ⚠️ **הבהרה — חשוב לקרוא לפני שמתקינים.** הפרויקט **אינו רשמי ואינו מסונף ל-WhatsApp או ל-Meta.** הוא משתמש בספרייה הלא-רשמית [Baileys](https://github.com/WhiskeySockets/Baileys) ומתחבר על-ידי התחזות ל-"מכשיר מקושר", מה ש**עלול להפר את תנאי השימוש של WhatsApp** ולגרום ל**חסימת המספר** לפי שיקול דעתה של Meta — במיוחד בשליחה המונית או לא-מבוקשת. מסופק **"כמות שהוא", ללא אחריות.** **האחריות כולה עליכם** — לשלוח רק למי שנתן הסכמה מפורשת מראש, ולעמוד בכל דין (GDPR, חוק הספאם סעיף 30א, ועוד). אינו ייעוץ משפטי. ראו **[DISCLAIMER.md](../DISCLAIMER.md)**.
+
 ---
 
 ## תוכן העניינים
@@ -956,6 +958,8 @@ function sendWhatsApp(to, text) {
 // שלח הודעה לכל שורה ב-sheet:
 function bulkSend() {
   const rows = SpreadsheetApp.getActiveSheet().getDataRange().getValues();
+  // ⚠️ אזהרה: שלחו אך ורק לנמענים שנתנו הסכמה מפורשת מראש (opt-in). שליחה לרשימה שנקנתה/נאספה
+  // מפֵרה את חוק הספאם (סעיף 30א), GDPR/CAN-SPAM/TCPA, וכמעט בוודאות תגרום לחסימת המספר.
   rows.slice(1).forEach(([phone, message]) => sendWhatsApp(phone, message));
 }
 ```
@@ -1050,8 +1054,8 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json
 ## שלב 9 — שליחה בטוחה: מניעת חסימה מ-WhatsApp
 
 WhatsApp לא אוהבים שולחים אוטומטיים. הם משתמשים באלגוריתמים שמזהים התנהגות
-לא-אנושית ו**חוסמים מספרים**. ספקים מסחריים כמו Green-API משקיעים הרבה בהגנה
-מפני זה (השהיות, typing simulation, rate-limit-per-recipient וכו').
+לא-אנושית ו**חוסמים מספרים**. שירותים מנוהלים מסחריים בדרך כלל מיישמים הגנות מסוג זה
+(השהיות, typing simulation, rate-limit-per-recipient וכו').
 
 **ה-Hub הזה לא כולל את ההגנות האלה מהקופסה.** אבל זה לא בעיה — אפשר ליישם אותן
 בקוד שקורא ל-API שלנו. הנה המתכונים החשובים:
@@ -1071,6 +1075,8 @@ def send_safe(to, text):
     # רנדומלי 3-15 שניות — לחיקוי קצב כתיבה אנושי
     time.sleep(random.uniform(3, 15))
 
+# ⚠️ אזהרה: שלחו אך ורק לנמענים שנתנו הסכמה מפורשת מראש (opt-in). שליחה לרשימה שנקנתה/נאספה
+# מפֵרה את חוק הספאם (סעיף 30א), GDPR/CAN-SPAM/TCPA, וכמעט בוודאות תגרום לחסימת המספר.
 for recipient, message in customers:
     send_safe(recipient, message)
 ```

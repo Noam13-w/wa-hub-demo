@@ -1,5 +1,7 @@
 # wa-hub-demo — Production Deployment Notes
 
+> ⚠️ **Legal / ToS notice:** this deploys an *unofficial* WhatsApp client. It is not affiliated with WhatsApp/Meta and may violate their Terms of Service. You are solely responsible for messaging only consenting recipients and for complying with GDPR / CAN-SPAM / TCPA / local anti-spam law. No warranty; the author is not liable for bans or legal consequences. See [../DISCLAIMER.md](../DISCLAIMER.md).
+
 Condensed operational reference. The full step-by-step (buy a VPS → live API in ~45 min, with
 screenshots-level detail in Hebrew) is **[BUILD_GUIDE_HE.md](BUILD_GUIDE_HE.md)** — read that first if
 you're starting from scratch. This file is the "I already know my way around a server" version.

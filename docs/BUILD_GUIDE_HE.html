@@ -741,6 +741,9 @@ Bubble, Firebase, Make, Python, או כל דבר שיודע HTTP.</p>
 <p><strong>זמן ביצוע:</strong> ~45 דקות בידיים. <strong>עלות:</strong> €3.79–€3.99 לחודש (Hetzner CAX11 או CX23).
 <strong>רישיון:</strong> MIT. <strong>קוד מקור:</strong> <a href="https://github.com/Noam13-w/wa-hub-demo">github.com/Noam13-w/wa-hub-demo</a></p>
 </blockquote>
+<blockquote class="callout">
+<p>⚠️ <strong>הבהרה — חשוב לקרוא לפני שמתקינים.</strong> הפרויקט <strong>אינו רשמי ואינו מסונף ל-WhatsApp או ל-Meta.</strong> הוא משתמש בספרייה הלא-רשמית <a href="https://github.com/WhiskeySockets/Baileys">Baileys</a> ומתחבר על-ידי התחזות ל-&quot;מכשיר מקושר&quot;, מה ש<strong>עלול להפר את תנאי השימוש של WhatsApp</strong> ולגרום ל<strong>חסימת המספר</strong> לפי שיקול דעתה של Meta — במיוחד בשליחה המונית או לא-מבוקשת. מסופק <strong>&quot;כמות שהוא&quot;, ללא אחריות.</strong> <strong>האחריות כולה עליכם</strong> — לשלוח רק למי שנתן הסכמה מפורשת מראש, ולעמוד בכל דין (GDPR, חוק הספאם סעיף 30א, ועוד). אינו ייעוץ משפטי. ראו <strong><a href="../DISCLAIMER.md">DISCLAIMER.md</a></strong>.</p>
+</blockquote>
 <hr>
 <h2 id="תוכן-העניינים">תוכן העניינים</h2>
 <ol>
@@ -1431,6 +1434,8 @@ return response()-&gt;json($r-&gt;json(), $r-&gt;status());</code></pre></div>
 // שלח הודעה לכל שורה ב-sheet:
 function bulkSend() {
   const rows = SpreadsheetApp.getActiveSheet().getDataRange().getValues();
+  // ⚠️ אזהרה: שלחו אך ורק לנמענים שנתנו הסכמה מפורשת מראש (opt-in). שליחה לרשימה שנקנתה/נאספה
+  // מפֵרה את חוק הספאם (סעיף 30א), GDPR/CAN-SPAM/TCPA, וכמעט בוודאות תגרום לחסימת המספר.
   rows.slice(1).forEach(([phone, message]) =&gt; sendWhatsApp(phone, message));
 }</code></pre></div>
 </div><div class="step-block"><h3 id="78-shell-cron">7.8 — Shell / cron</h3>
@@ -1507,8 +1512,8 @@ curl -X PUT -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: a
 <hr>
 </div><h2 id="שלב-9-שליחה-בטוחה-מניעת-חסימה-מ-whatsapp">שלב 9 — שליחה בטוחה: מניעת חסימה מ-WhatsApp</h2>
 <p>WhatsApp לא אוהבים שולחים אוטומטיים. הם משתמשים באלגוריתמים שמזהים התנהגות
-לא-אנושית ו<strong>חוסמים מספרים</strong>. ספקים מסחריים כמו Green-API משקיעים הרבה בהגנה
-מפני זה (השהיות, typing simulation, rate-limit-per-recipient וכו&#39;).</p>
+לא-אנושית ו<strong>חוסמים מספרים</strong>. שירותים מנוהלים מסחריים בדרך כלל מיישמים הגנות מסוג זה
+(השהיות, typing simulation, rate-limit-per-recipient וכו&#39;).</p>
 <p><strong>ה-Hub הזה לא כולל את ההגנות האלה מהקופסה.</strong> אבל זה לא בעיה — אפשר ליישם אותן
 בקוד שקורא ל-API שלנו. הנה המתכונים החשובים:</p>
 <div class="step-block"><h3 id="91-השהייה-רנדומלית-בין-הודעות">9.1 — השהייה רנדומלית בין הודעות</h3>
@@ -1523,6 +1528,8 @@ def send_safe(to, text):
     # רנדומלי 3-15 שניות — לחיקוי קצב כתיבה אנושי
     time.sleep(random.uniform(3, 15))
 
+# ⚠️ אזהרה: שלחו אך ורק לנמענים שנתנו הסכמה מפורשת מראש (opt-in). שליחה לרשימה שנקנתה/נאספה
+# מפֵרה את חוק הספאם (סעיף 30א), GDPR/CAN-SPAM/TCPA, וכמעט בוודאות תגרום לחסימת המספר.
 for recipient, message in customers:
     send_safe(recipient, message)</code></pre></div>
 </div><div class="step-block"><h3 id="92-סימולציית-הקלדה-typing-indicator">9.2 — סימולציית הקלדה (typing indicator)</h3>

@@ -1,5 +1,7 @@
 # Curl examples
 
+> ⚠️ **Legal / ToS:** `wa-hub-demo` is an unofficial WhatsApp client (not affiliated with WhatsApp/Meta) and may violate WhatsApp's ToS. Use only against contacts who consented; bulk number-checking and programmatic group add/remove are high-risk and a common ban trigger. No warranty. See [../../DISCLAIMER.md](../../DISCLAIMER.md).
+
 Set these once in your shell:
 
 ```bash

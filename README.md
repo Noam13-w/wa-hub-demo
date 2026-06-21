@@ -1,10 +1,13 @@
 # wa-hub-demo
 
-> **Self-hosted WhatsApp HTTP API. Green-API style, fully yours.**
+> **Self-hosted WhatsApp HTTP API. Run it yourself, own your messages.**
 > Node 20 + [Baileys](https://github.com/WhiskeySockets/Baileys). Single-tenant.
-> Built for the *"How to ship a WhatsApp bot in 45 minutes"* webinar — but production-grade.
+> Built for the *"How to ship a WhatsApp bot in 45 minutes"* webinar — built with
+> production hardening in mind (rate limiting, HMAC-signed webhooks, systemd sandboxing).
 
 **🌐 Language:** **English** · [עברית](README.he.md)
+
+> ⚠️ **Disclaimer — read before you deploy.** Not affiliated with, endorsed by, or sponsored by **WhatsApp or Meta**. This uses the unofficial, reverse-engineered [Baileys](https://github.com/WhiskeySockets/Baileys) library and connects by impersonating a WhatsApp "linked device" — which **may violate [WhatsApp's Terms of Service](https://www.whatsapp.com/legal/terms-of-service)** and can get the connected number **banned** at Meta's sole discretion, especially for bulk or unsolicited messaging. Provided **"as is", no warranty**. **You alone are responsible** for messaging only people who gave prior opt-in consent and for complying with applicable law (GDPR, CAN-SPAM, TCPA, Israel's §30A "Spam Law"). Not legal advice. → **[DISCLAIMER.md](DISCLAIMER.md)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)]()
@@ -29,20 +32,24 @@ typed, rate-limited, HMAC-signed, ready to deploy on any €4/mo Linux VPS.
 
 ## Why?
 
-| Self-hosted (this) | Hosted services (Green-API, Wassenger, ...) |
+| Self-hosted (this) | Hosted SaaS providers |
 |---|---|
-| €3.79–€3.99/mo flat | $20–$200+/mo, often per-message |
-| You own the messages | They proxy them |
-| No external rate-limits | Their limits |
+| Low flat VPS cost (~a few €/mo) | Typically a monthly subscription, often with per-message or volume-based pricing |
+| You run the connection yourself | The provider operates the connection on your behalf |
+| No third-party rate limits beyond WhatsApp's | The provider may apply its own limits |
 | You patch and monitor | They patch and monitor |
 
+> Pricing and feature models of hosted providers vary and change over time — check each
+> provider's current terms. This comparison is general and illustrative, not a statement
+> about any specific provider.
+
 If your volume is moderate **and** you care about cost/privacy/control — self-host.
-If you need 99.99% SLA without ops work — pay someone.
+If you need a contractual uptime SLA without doing ops work yourself — use a managed service.
 
 ## Quickstart
 
 > 📘 **For a step-by-step "buy a server → live API in 45 minutes" walkthrough**,
-> read **[docs/BUILD_GUIDE_HE.md](docs/BUILD_GUIDE_HE.md)** (Hebrew).
+> read the full build guide — **[English](docs/BUILD_GUIDE_EN.md)** · **[עברית](docs/BUILD_GUIDE_HE.md)**.
 > It covers VPS purchase, SSH hardening, manual install, pairing, Cloudflare Tunnel,
 > and a Base44 integration example.
 
@@ -267,11 +274,16 @@ hardening pass already implemented — verify each one in your environment.
 
 PRs welcome.
 
+## Disclaimer & Acceptable Use
+
+> **AS IS, no warranty.** This is an independent open-source project built on the unofficial, reverse-engineered Baileys library. **It is not affiliated with, endorsed by, or sponsored by WhatsApp LLC or Meta Platforms, Inc.** Using an unofficial WhatsApp client may violate WhatsApp's Terms of Service, and Meta may rate-limit or permanently ban accounts — especially for bulk or unsolicited messaging.
+>
+> **You are solely responsible for using this software lawfully.** Only message people who have given you prior opt-in consent. You — not the author — must comply with all applicable laws (GDPR, CAN-SPAM, TCPA, Israel's §30A "Spam Law", and any local anti-spam/privacy rules) and obtain any required consent. The author accepts no liability for account bans, data loss, service interruption, or any legal consequence arising from your use. For commercial / high-volume messaging, use the official [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api/). See **[DISCLAIMER.md](DISCLAIMER.md)**.
+
 ## License
 
 [MIT](LICENSE) © 2026 Noam Nissan
 
 ## Acknowledgements
 
-- [@WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys) — the heart of this project. Without it, none of this is possible.
-- Green-API — for showing that simple HTTP > complex SDK.
+- [@WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys) — the heart of this project. Without it, none of this is possible. (Baileys is an **unofficial, reverse-engineered** implementation of the WhatsApp Web protocol, MIT-licensed — relying on it is what creates the Terms-of-Service and ban risk described in the [disclaimer](DISCLAIMER.md).)

@@ -1,3 +1,6 @@
+// ⚠️ LEGAL: wa-hub-demo is an unofficial WhatsApp client (not affiliated with WhatsApp/Meta)
+// and may violate WhatsApp's ToS. Only auto-reply to people who consented to be contacted, and
+// comply with GDPR / CAN-SPAM / TCPA / local anti-spam law. No warranty. See ../../DISCLAIMER.md
 /**
  * Base44 backend function — receive incoming WhatsApp messages from wa-hub-demo.
  *

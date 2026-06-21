@@ -5,16 +5,22 @@ Not promises — a list of where the project could go. PRs and issues welcome:
 
 ## Anti-blocking (built-in)
 
-Today the Hub is a thin, honest pipe — it does **not** ship the anti-ban heuristics commercial
-providers (Green-API et al.) include. The recommended approach is to implement them in the code that
-*calls* the API (see BUILD_GUIDE_HE.md §9, "שליחה בטוחה"). On the roadmap to optionally move these
-into the Hub itself:
+Today the Hub is a thin, honest pipe — it does **not** ship the anti-ban heuristics that commercial
+providers typically include. The recommended approach is to implement them in the code that
+*calls* the API (see the build guide, "safe / responsible sending"). On the roadmap to optionally
+move these into the Hub itself:
 
 - [ ] Configurable random delay between sends (e.g. 3–15 s).
 - [ ] Per-recipient rate limiting (≥30 s between messages to the same number; daily caps).
 - [ ] "Warm-up" schedule for new numbers (ramp daily volume over the first ~2 weeks).
 - [ ] Typing-indicator simulation before long messages.
 - [ ] Single-tick stall detection → auto-pause + alert (the WhatsApp pre-ban warning sign).
+
+> **Note:** these are reliability aids meant to make *consented*, human-paced messaging more
+> robust — **not** a way to make bulk, cold, or unsolicited messaging safe or compliant. They
+> don't change the fact that unofficial Linked-Device use may violate WhatsApp's ToS and get a
+> number banned. Only message people who consented; for high-volume / commercial use, use the
+> official WhatsApp Cloud API. See [../DISCLAIMER.md](../DISCLAIMER.md).
 
 ## Multi-tenant / scale
 
