@@ -67,6 +67,23 @@ const schema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   DATA_DIR: z.string().default('./data'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  // ─── Anti-ban send pacing ──────────────────────────────────────────────
+  // Every WhatsApp send funnels through one FIFO queue. By default it only
+  // SERIALIZES sends (no added delay) so behaviour is unchanged. Set these to add
+  // a human-like randomized gap between sends and a typing indicator — strongly
+  // recommended for any real outbound volume (robotic timing/velocity is the #1
+  // ban trigger). Safe production profile:
+  //   SEND_MIN_DELAY_MS=3000  SEND_MAX_DELAY_MS=8000  SEND_TYPING=true
+  SEND_MIN_DELAY_MS: z.coerce.number().int().nonnegative().default(0),
+  SEND_MAX_DELAY_MS: z.coerce.number().int().nonnegative().default(0),
+  // Send a "composing"/"recording" chatstate before each message (WhatsApp does
+  // NOT do this automatically; sending with no typing indicator is a bot tell).
+  SEND_TYPING: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+  SEND_TYPING_MS_PER_CHAR: z.coerce.number().int().nonnegative().default(60),
+  SEND_TYPING_MAX_MS: z.coerce.number().int().positive().default(8000),
 }).refine((c) => c.HUB_PORT !== c.WS_PORT, {
   message: 'HUB_PORT and WS_PORT must be different',
   path: ['WS_PORT'],

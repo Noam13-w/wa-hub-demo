@@ -109,6 +109,30 @@ instanceRouter.get('/diagnose', async (_req, res, next) => {
   }
 });
 
+// WhatsApp's OWN anti-abuse signals for this account (Baileys 7.x): the reachout
+// timelock (is WhatsApp currently throttling messaging to NEW chats?) and the
+// new-chat message cap. Watch these to back off BEFORE a ban — a rising/active
+// timelock means "stop messaging strangers". Each does a network round-trip.
+instanceRouter.get('/health/wa', async (_req, res, next) => {
+  try {
+    const sock = getSocket();
+    if (!sock || state.connection !== 'connected') {
+      return res.status(503).json({ error: 'not_connected', state: state.connection });
+    }
+    const [timelock, cap] = await Promise.allSettled([
+      sock.fetchAccountReachoutTimelock(),
+      sock.fetchNewChatMessageCap(),
+    ]);
+    res.json({
+      connection: state.connection,
+      reachoutTimelock: timelock.status === 'fulfilled' ? timelock.value : { error: timelock.reason?.message || 'unavailable' },
+      newChatMessageCap: cap.status === 'fulfilled' ? cap.value : { error: cap.reason?.message || 'unavailable' },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Post-pairing smoke test. Sends a confirmation message to the operator's OWN
 // number so they SEE the API work end-to-end inside WhatsApp — the most concrete
 // "it's alive" signal. Token-gated; only works once connected (we need state.me

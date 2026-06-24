@@ -80,3 +80,125 @@ groupsRouter.post('/:jid/participants', requireConnected, wrap(async (req, res) 
   }
   res.json({ ok: true, results });
 }));
+
+// ─── Group lifecycle & admin ─────────────────────────────────────────────
+const INVITE_BASE = 'https://chat.whatsapp.com/';
+const toGroupJid = (raw) => { const t = String(raw).trim(); return t.includes('@') ? t : `${t}@g.us`; };
+const stripInvite = (c) => String(c).trim().replace(/^https?:\/\/chat\.whatsapp\.com\//, '');
+
+// Create a group. ⚠ Bulk-creating groups or adding strangers is a top ban signal —
+// use only with consenting participants (see docs/INTEGRATION.md → Anti-ban).
+groupsRouter.post('/', requireConnected, wrap(async (req, res) => {
+  const parsed = z.object({
+    subject: z.string().trim().min(1).max(100),
+    participants: z.array(z.string().refine((v) => PARTICIPANT_RE.test(v), { message: 'invalid_participant' })).max(50).default([]),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  const meta = await getSocket().groupCreate(parsed.data.subject, parsed.data.participants.map(normalizeJid));
+  res.json({ ok: true, jid: meta.id, subject: meta.subject, participants: meta.participants?.length ?? 0 });
+}));
+
+groupsRouter.post('/:jid/leave', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  await getSocket().groupLeave(toGroupJid(req.params.jid));
+  res.json({ ok: true });
+}));
+
+groupsRouter.put('/:jid/subject', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ subject: z.string().trim().min(1).max(100) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupUpdateSubject(toGroupJid(req.params.jid), parsed.data.subject);
+  res.json({ ok: true });
+}));
+
+// Empty/omitted description clears it.
+groupsRouter.put('/:jid/description', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ description: z.string().max(2048).optional() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupUpdateDescription(toGroupJid(req.params.jid), parsed.data.description);
+  res.json({ ok: true });
+}));
+
+// announcement = only admins can post; locked = only admins can edit group info.
+groupsRouter.put('/:jid/settings', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ setting: z.enum(['announcement', 'not_announcement', 'locked', 'unlocked']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupSettingUpdate(toGroupJid(req.params.jid), parsed.data.setting);
+  res.json({ ok: true });
+}));
+
+// Disappearing messages: 0 off, 86400 (24h), 604800 (7d), 7776000 (90d).
+groupsRouter.put('/:jid/ephemeral', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ seconds: z.coerce.number().int().nonnegative() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupToggleEphemeral(toGroupJid(req.params.jid), parsed.data.seconds);
+  res.json({ ok: true });
+}));
+
+groupsRouter.put('/:jid/member-add-mode', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ mode: z.enum(['admin_add', 'all_member_add']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupMemberAddMode(toGroupJid(req.params.jid), parsed.data.mode);
+  res.json({ ok: true });
+}));
+
+groupsRouter.put('/:jid/join-approval', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({ mode: z.enum(['on', 'off']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  await getSocket().groupJoinApprovalMode(toGroupJid(req.params.jid), parsed.data.mode);
+  res.json({ ok: true });
+}));
+
+// Invite link (admin only). The reliable way to bring people in when their privacy
+// blocks a direct add — send them this link via /api/messages/send/text.
+groupsRouter.get('/:jid/invite', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const code = await getSocket().groupInviteCode(toGroupJid(req.params.jid));
+  res.json({ ok: true, code, url: code ? INVITE_BASE + code : null });
+}));
+
+groupsRouter.post('/:jid/invite/revoke', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const code = await getSocket().groupRevokeInvite(toGroupJid(req.params.jid));
+  res.json({ ok: true, code, url: code ? INVITE_BASE + code : null });
+}));
+
+// Pending join requests (admin only).
+groupsRouter.get('/:jid/requests', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const list = await getSocket().groupRequestParticipantsList(toGroupJid(req.params.jid));
+  res.json({ ok: true, requests: list || [] });
+}));
+
+groupsRouter.post('/:jid/requests', requireConnected, wrap(async (req, res) => {
+  if (!validGroupJid(req.params.jid)) return res.status(400).json({ error: 'invalid_group_jid' });
+  const parsed = z.object({
+    participants: z.array(z.string().refine((v) => PARTICIPANT_RE.test(v), { message: 'invalid_participant' })).min(1).max(50),
+    action: z.enum(['approve', 'reject']),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  const results = await getSocket().groupRequestParticipantsUpdate(toGroupJid(req.params.jid), parsed.data.participants.map(normalizeJid), parsed.data.action);
+  res.json({ ok: true, results });
+}));
+
+// Preview a group from an invite code (no join). `code` = the part after chat.whatsapp.com/
+groupsRouter.get('/invite/:code', requireConnected, wrap(async (req, res) => {
+  const code = stripInvite(req.params.code);
+  if (!/^[A-Za-z0-9_-]{6,}$/.test(code)) return res.status(400).json({ error: 'invalid_code' });
+  const meta = await getSocket().groupGetInviteInfo(code);
+  res.json(meta);
+}));
+
+// Join a group via invite code/link. ⚠ Mass-joining is a spam signal — use sparingly.
+groupsRouter.post('/join', requireConnected, wrap(async (req, res) => {
+  const parsed = z.object({ code: z.string().trim().min(6) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
+  const jid = await getSocket().groupAcceptInvite(stripInvite(parsed.data.code));
+  res.json({ ok: true, jid });
+}));
