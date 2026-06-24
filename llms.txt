@@ -1,0 +1,23 @@
+# wa-hub-demo
+
+> Self-hosted WhatsApp HTTP API (REST + JSON + HMAC-signed webhooks), powered by Baileys.
+> Precondition for any send: a WhatsApp device must be paired once (scan a QR at /pair); confirm with
+> GET /api/instance/status → connection:"connected", else sends return 503 not_connected.
+> Auth: header `Authorization: Bearer <HUB_TOKEN>` on every /api/* call. Two secrets: HUB_TOKEN (call the
+> API) and WEBHOOK_SECRET (verify HMAC-SHA256 over the raw webhook body, header x-hub-signature).
+
+## Integrate (read these first)
+- [Integration guide](docs/INTEGRATION.md): the complete how-to — pairing, the two secrets, every endpoint, webhook signature verification (Node + Python). Start here.
+- [AGENTS.md](AGENTS.md): the 60-second model and a "where to look" map for AI agents.
+- [openapi.yaml](openapi.yaml): machine-readable OpenAPI 3.1 spec for import/codegen.
+- [API reference](docs/API.md): exhaustive endpoint-by-endpoint field reference.
+- [Webhook receiver example](examples/base44/webhook-receiver.ts): reference implementation.
+- [curl recipes](examples/curl/README.md)
+
+## Operate the server (optional — not needed to integrate)
+- [Deploy notes](docs/DEPLOY.md)
+- [Stable subdomain](docs/SUBDOMAIN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+
+## Legal
+- [Disclaimer / acceptable use](DISCLAIMER.md): unofficial client; may violate WhatsApp ToS; consenting recipients only.
