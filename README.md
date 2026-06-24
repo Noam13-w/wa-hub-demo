@@ -136,6 +136,11 @@ the `?token=` query form is off unless `ALLOW_QUERY_TOKEN=true`).
 
 Full reference with request/response examples: **[docs/API.md](docs/API.md)**
 
+> **Handing this to a developer, Base44, or an AI agent (Claude Code / Cursor)?** Give them the
+> self-contained **[Integration Guide](docs/INTEGRATION.md)** ([עברית](docs/INTEGRATION.he.md)) — the
+> mental model (pairing + the two secrets: `HUB_TOKEN` to call the API, `WEBHOOK_SECRET` to verify
+> webhooks), every endpoint, and copy-paste signature-verification code, all in one document.
+
 ## Incoming events (webhook payload)
 
 When `instance.webhook.url` is set, the hub POSTs JSON to that URL on every event,
@@ -212,8 +217,10 @@ wa-hub-demo/
 │   ├── install.sh            ← one-command installer
 │   └── cloudflared-setup.sh  ← Cloudflare Tunnel helper
 ├── docs/
-│   ├── BUILD_GUIDE_HE.md     ← the full webinar walkthrough (Hebrew)
+│   ├── INTEGRATION.md        ← how to USE the API (hand to a dev/Base44/AI) · .he.md = עברית
 │   ├── API.md                ← endpoint-by-endpoint reference
+│   ├── SUBDOMAIN.md          ← move off the temporary URL onto a stable subdomain
+│   ├── BUILD_GUIDE_HE.md     ← the full webinar walkthrough (Hebrew)
 │   ├── ARCHITECTURE.md       ← why it's built the way it is
 │   └── DEPLOY.md             ← production deployment notes
 └── examples/

@@ -130,6 +130,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 תיעוד מלא עם דוגמאות בקשה/תשובה: **[docs/API.md](docs/API.md)**
 
+> **מעבירים את זה למתכנת, ל-Base44 או לסוכן AI (Claude Code / Cursor)?** תנו להם את **[מדריך האינטגרציה](docs/INTEGRATION.he.md)**
+> ([English](docs/INTEGRATION.md)) — המודל המנטלי (שיוך + שתי הסיסמאות: `HUB_TOKEN` לקריאות API,
+> `WEBHOOK_SECRET` לאימות webhooks), כל ה-endpoints, וקוד אימות-חתימה מוכן להעתקה — הכל במסמך אחד.
+
 ## אירועים נכנסים (מבנה ה-webhook)
 
 כש-`instance.webhook.url` מוגדר, ה-Hub שולח POST עם JSON ל-URL הזה בכל אירוע,

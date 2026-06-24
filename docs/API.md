@@ -3,6 +3,10 @@
 Endpoint-by-endpoint reference for the Hub's REST API and outbound webhook/WebSocket.
 Everything is plain **REST + JSON + Bearer auth**. Generated from the source in `src/`.
 
+> 👋 **New here / integrating?** Start with the **[Integration Guide](INTEGRATION.md)**
+> ([עברית](INTEGRATION.he.md)) — it explains the mental model (pairing + the two secrets) and how to
+> wire everything up. This page is the exhaustive field-by-field reference.
+
 - **Base URL:** your tunnel URL (e.g. `https://api.example.com`) or `http://127.0.0.1:3060` on the box.
 - **WebSocket:** `:3061` (see [WebSocket](#websocket) below).
 
