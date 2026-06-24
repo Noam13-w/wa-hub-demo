@@ -252,13 +252,38 @@ done
 [[ -n "$TUNNEL_URL" ]] && ok "tunnel URL: $TUNNEL_URL" \
                       || warn "tunnel URL not captured yet — run 'journalctl -u cloudflared-wahub.service | grep trycloudflare' in 30s"
 
+# A registered Quick Tunnel URL can still be DEAD if cloudflared can't reach the
+# Cloudflare edge. The classic cause is QUIC/UDP 7844 egress being blocked — now
+# forced onto TCP via `--protocol http2` in the unit — but we still PROBE the public
+# /healthz here so the installer never hands the user a link that silently doesn't
+# work. (/healthz needs no token, so a 200 proves the whole tunnel→API path is live.)
+TUNNEL_OK=0
+if [[ -n "$TUNNEL_URL" ]]; then
+  step "Verifying the public tunnel actually carries traffic"
+  for _ in $(seq 1 20); do
+    if [[ "$(curl -fsS -m 5 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/healthz" 2>/dev/null || true)" == "200" ]]; then
+      TUNNEL_OK=1; break
+    fi
+    sleep 2
+  done
+  if [[ "$TUNNEL_OK" == "1" ]]; then
+    ok "tunnel is live — $TUNNEL_URL/healthz returned 200"
+  else
+    warn "tunnel registered but not reachable yet (it can take ~30s after first boot)."
+    warn "If it stays down, this host is blocking cloudflared's egress to the edge. Check:"
+    warn "  journalctl -u cloudflared-wahub.service | grep -Ei 'register|fail|protocol'"
+  fi
+fi
+
 # ─── Final summary ───────────────────────────────────────────────────────────
 echo
 echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════════${RESET}"
 echo -e "${GREEN}${BOLD}  🎉 wa-hub-demo is live!${RESET}"
 echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════════${RESET}"
 echo
-echo -e "${BOLD}Public URL:${RESET}        ${CYAN}${TUNNEL_URL:-(check in a moment)}${RESET}"
+echo -e "${BOLD}Public URL:${RESET}        ${CYAN}${TUNNEL_URL:-(check in a moment)}${RESET}$( [[ -n "$TUNNEL_URL" && "$TUNNEL_OK" == "1" ]] && echo -e "  ${GREEN}✓ live${RESET}" )"
+[[ -n "$TUNNEL_URL" && "$TUNNEL_OK" != "1" ]] && \
+  echo -e "                   ${YELLOW}↳ not reachable yet — give it ~30s and reload; if it stays down see 'Tunnel logs' below${RESET}"
 # Only echo raw secrets to an interactive terminal. When the installer is piped
 # (curl ... | bash) stdout is not a TTY, and printing would leak them into the
 # pipe / CI logs / scrollback — so we point to the 0600 .env instead.
@@ -288,7 +313,9 @@ if [[ -n "$TUNNEL_URL" ]]; then
     echo -e "       ${CYAN}${TUNNEL_URL}/pair${RESET}  — then paste your HUB_TOKEN when asked"
   fi
 else
-  echo -e "       ${CYAN}\$TUNNEL_URL/pair${RESET}  — then paste your HUB_TOKEN when asked"
+  echo -e "       ${YELLOW}Tunnel URL not ready yet — fetch it once cloudflared settles:${RESET}"
+  echo -e "       ${CYAN}journalctl -u cloudflared-wahub | grep -Eo 'https://[a-z0-9-]+\\.trycloudflare\\.com' | tail -1${RESET}"
+  echo -e "       then open  ${BOLD}<that-URL>/pair${RESET}  and paste your HUB_TOKEN when asked"
 fi
 echo
 echo -e "       The QR refreshes itself and flips to “Linked” automatically when you scan"
@@ -298,7 +325,8 @@ echo -e "       ${BOLD}Headless alternative${RESET} (no browser) — fetch the Q
 if [[ -n "$TUNNEL_URL" ]]; then
   echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer $TOKDISP\" $TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
 else
-  echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer \$HUB_TOKEN\" \$TUNNEL_URL/api/instance/qr.png -o ~/qr.png${RESET}"
+  echo -e "       (once you have the URL above, with your HUB_TOKEN from ${CYAN}$ENV_FILE${RESET}:)"
+  echo -e "       ${CYAN}curl -fsS -H \"Authorization: Bearer <HUB_TOKEN>\" <URL>/api/instance/qr.png -o ~/qr.png${RESET}"
 fi
 echo
 echo -e "  ${BOLD}2. Send a test message:${RESET}"

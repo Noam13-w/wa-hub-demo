@@ -21,6 +21,11 @@ let sock = null;
 let reconnectAttempts = 0;
 let stableTimer = null;
 let reconnectTimer = null;
+// True once we've reached a live ('open') connection at least once. Used to tell
+// normal QR-pairing churn (fast, benign) apart from a real connection that dropped
+// (where exponential backoff is appropriate). Reset on resetAuth() so re-pairing
+// after a logout gets the fast QR cadence again.
+let everConnected = false;
 
 const AUTH_DIR = join(config.DATA_DIR, 'auth');
 
@@ -61,6 +66,7 @@ export async function resetAuth() {
     sock = null;
   }
   reconnectAttempts = 0;
+  everConnected = false;
   await startSocket();
 }
 
@@ -116,6 +122,7 @@ async function handleConnectionUpdate(update) {
 
   if (connection === 'open') {
     reconnectAttempts = 0;
+    everConnected = true;
     const me = sock?.user
       ? {
           jid: jidNormalizedUser(sock.user.id),
@@ -145,6 +152,25 @@ async function handleConnectionUpdate(update) {
     }
     if (replaced) {
       log.error('Another session replaced this one (code 440). Not reconnecting — re-pair to take over.');
+      return;
+    }
+
+    // QR-pairing churn vs a dropped live connection. While we've NEVER linked a
+    // device, Baileys ends the socket with 408 (timedOut — "QR refs attempts
+    // ended") once it burns through a batch of QR codes, or 515 (restartRequired)
+    // right after a successful scan. Both are normal pairing steps, not a flaky
+    // link — so re-arm a fresh QR almost immediately and do NOT feed the
+    // exponential backoff. Otherwise reconnectAttempts climbs (it only resets on a
+    // real 'open'), backoff saturates at 60s, and during those gaps /api/instance/qr
+    // serves nothing so the /pair page is stuck on "Waiting for a fresh QR…".
+    const transient = code === DisconnectReason.timedOut || code === DisconnectReason.restartRequired;
+    if (!everConnected && transient) {
+      log.info({ code }, 'QR cycle ended while unpaired — re-arming a fresh QR');
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startSocket().catch((err) => log.error({ err }, 'QR re-arm failed'));
+      }, 1000);
       return;
     }
 

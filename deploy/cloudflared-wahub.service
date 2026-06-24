@@ -5,7 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3060
+# --protocol http2 forces the edge connection over TCP (port 7844). The default
+# ('auto') prefers QUIC over UDP 7844, but many networks/ISPs/clouds drop outbound
+# UDP — and cloudflared does NOT reliably fall back, so the Quick Tunnel registers
+# a *.trycloudflare.com URL that never actually carries traffic (the printed QR/API
+# link looks valid but is dead). TCP/443-style egress is open virtually everywhere,
+# so http2 makes the tunnel — and therefore every install — work out of the box.
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:3060
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
