@@ -239,13 +239,23 @@ install -m 644 "$INSTALL_DIR/deploy/cloudflared-wahub.service" /etc/systemd/syst
 systemctl daemon-reload
 systemctl enable --now cloudflared-wahub.service >/dev/null
 
-# Wait for the tunnel URL to appear in the journal (Quick Tunnel returns within ~5s)
+# Wait for THIS run's Quick Tunnel URL. We filter the journal by cloudflared's
+# CURRENT systemd InvocationID so we never scrape a STALE *.trycloudflare.com URL
+# left over from a previous run: Quick Tunnel URLs are ephemeral (a fresh one every
+# restart), so on a re-install the old, now-dead URL is still in the unit's journal
+# and a naive `tail -1` would grab it. Fall back to the plain unit filter if the
+# InvocationID can't be read (older systemd). `|| true` keeps a not-yet-present URL
+# (grep exit 1) from aborting under `set -o pipefail`.
 TUNNEL_URL=""
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  # `|| true` so a not-yet-present URL (grep exit 1) doesn't abort the script
-  # under `set -o pipefail` before the tunnel has had time to come up.
-  TUNNEL_URL=$(journalctl -u cloudflared-wahub.service --no-pager 2>/dev/null \
-                | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1 || true)
+for _ in $(seq 1 15); do
+  invoc="$(systemctl show -p InvocationID --value cloudflared-wahub.service 2>/dev/null || true)"
+  if [[ -n "$invoc" ]]; then
+    TUNNEL_URL=$(journalctl _SYSTEMD_INVOCATION_ID="$invoc" --no-pager 2>/dev/null \
+                  | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1 || true)
+  else
+    TUNNEL_URL=$(journalctl -u cloudflared-wahub.service --no-pager 2>/dev/null \
+                  | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1 || true)
+  fi
   [[ -n "$TUNNEL_URL" ]] && break
   sleep 2
 done
@@ -331,9 +341,9 @@ fi
 echo
 echo -e "  ${BOLD}2. Send a test message:${RESET}"
 if [[ -n "$TUNNEL_URL" ]]; then
-  echo -e "       ${CYAN}curl -X POST -H \"Authorization: Bearer $TOKDISP\" \\${RESET}"
-  echo -e "       ${CYAN}     -H 'Content-Type: application/json' \\${RESET}"
-  echo -e "       ${CYAN}     -d '{\"to\":\"<recipient>\",\"text\":\"hi\"}' \\${RESET}"
+  echo -e "       ${CYAN}curl -X POST -H \"Authorization: Bearer $TOKDISP\" ${RESET}\\"
+  echo -e "       ${CYAN}     -H 'Content-Type: application/json' ${RESET}\\"
+  echo -e "       ${CYAN}     -d '{\"to\":\"<recipient>\",\"text\":\"hi\"}' ${RESET}\\"
   echo -e "       ${CYAN}     $TUNNEL_URL/api/messages/send/text${RESET}"
 fi
 echo
