@@ -92,7 +92,7 @@ export function pairPageHtml(nonce) {
     <div class="card warn">
       <strong>Your API base URL</strong>
       <pre class="ex" id="baseUrl">__BASE__</pre>
-      <div class="muted">&#9888; This is a free Cloudflare <b>Quick Tunnel</b> &mdash; the URL is <b>temporary and changes every restart</b>. Fine for trying it out; for production connect a Cloudflare <b>Named Tunnel</b> to your own <b>subdomain</b> (stable URL, TLS, no open ports). See <code>deploy/cloudflared-setup.sh</code> and <code>docs/DEPLOY.md</code>.</div>
+      <div class="muted">&#9888; This is a free Cloudflare <b>Quick Tunnel</b> &mdash; the URL is <b>temporary and changes every restart</b>. Fine for trying it out; for production connect a Cloudflare <b>Named Tunnel</b> to your own <b>subdomain</b> (stable URL, TLS, no open ports). See <code>docs/SUBDOMAIN.md</code> (one command: <code>sudo deploy/cloudflared-setup.sh named</code>).</div>
     </div>
 
     <div class="card">

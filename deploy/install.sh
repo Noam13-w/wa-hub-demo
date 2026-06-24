@@ -353,7 +353,7 @@ echo
 echo -e "  ${YELLOW}${BOLD}⚠ This public URL is TEMPORARY${RESET}${YELLOW} — a free Quick Tunnel whose address"
 echo -e "     changes on every restart. For production, point a stable ${BOLD}subdomain${RESET}${YELLOW} at the"
 echo -e "     Hub with a Cloudflare Named Tunnel:${RESET}"
-echo -e "       ${CYAN}$INSTALL_DIR/deploy/cloudflared-setup.sh${RESET}   (guide: ${CYAN}$INSTALL_DIR/docs/DEPLOY.md${RESET})"
+echo -e "       ${CYAN}sudo $INSTALL_DIR/deploy/cloudflared-setup.sh named${RESET}   (guide: ${CYAN}docs/SUBDOMAIN.md${RESET})"
 echo
 echo -e "  ${BOLD}Logs:${RESET}             journalctl -u wa-hub -f"
 echo -e "  ${BOLD}Tunnel logs:${RESET}      journalctl -u cloudflared-wahub -f"

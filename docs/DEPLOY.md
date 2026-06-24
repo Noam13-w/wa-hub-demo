@@ -47,8 +47,11 @@ curl -fsSL https://raw.githubusercontent.com/Noam13-w/wa-hub-demo/main/deploy/in
 
 - **Quick Tunnel** (`cloudflared tunnel --url http://127.0.0.1:3060`) — random `*.trycloudflare.com`
   URL that **changes on every restart**. Great for demos; runs as `cloudflared-wahub.service`.
-- **Named Tunnel** — stable URL on your own domain (`api.example.com`). Use this for production.
-  See BUILD_GUIDE_HE.md §6.4. After switching, update the URL anywhere you referenced the temporary one.
+- **Named Tunnel** — stable URL on your own domain (`wa.example.com`) that **survives restarts**. Use
+  this for production. One command: `sudo deploy/cloudflared-setup.sh named`. Full walkthrough
+  (prerequisites, manual steps, the required `protocol: http2`, troubleshooting) →
+  **[SUBDOMAIN.md](SUBDOMAIN.md)**. After switching, update the URL anywhere you referenced the
+  temporary one.
 
 ## Environment (`.env`)
 

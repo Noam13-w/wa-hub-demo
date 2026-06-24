@@ -59,7 +59,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3060
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:3060
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -108,6 +108,10 @@ if [[ "$MODE" == "named" ]]; then
   cat >/etc/cloudflared/config.yml <<EOF
 tunnel: $TUNNEL_ID
 credentials-file: /etc/cloudflared/$TUNNEL_ID.json
+# Force the edge connection over TCP. The default (QUIC, UDP 7844) is dropped on
+# many networks/ISPs/clouds and cloudflared does NOT fall back — the tunnel would
+# come up but never carry traffic. http2 (TCP) works virtually everywhere.
+protocol: http2
 ingress:
   - hostname: $HOSTNAME
     service: http://127.0.0.1:3060
@@ -124,6 +128,13 @@ EOF
 
   if systemctl is-active --quiet cloudflared; then
     ok "Tunnel running. Public URL: https://$HOSTNAME"
+    # Stop the temporary Quick Tunnel the installer set up, so we don't run both
+    # against the same origin (the random *.trycloudflare.com URL is no longer needed).
+    if systemctl is-active --quiet cloudflared-wahub.service 2>/dev/null \
+       || systemctl is-enabled --quiet cloudflared-wahub.service 2>/dev/null; then
+      systemctl disable --now cloudflared-wahub.service >/dev/null 2>&1 || true
+      ok "stopped the temporary Quick Tunnel — your subdomain is the endpoint now"
+    fi
   else
     fail "cloudflared service did not start. Check: journalctl -u cloudflared -n 50"
   fi
