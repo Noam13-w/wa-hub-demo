@@ -79,6 +79,10 @@ export function buildApp() {
     res.type('html').send(pairPageHtml(nonce));
   });
 
+  // Bare root → the pairing/console page, so opening the tunnel URL in a browser
+  // "just works" instead of returning a bare 404 JSON. /pair carries no secret.
+  app.get('/', (_req, res) => res.redirect(302, '/pair'));
+
   // ── Authenticated API ─────────────────────────────────────────────────
   const api = express.Router();
   // Rate-limit BEFORE auth so brute-force attempts against the token are
