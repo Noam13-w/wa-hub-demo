@@ -347,6 +347,14 @@ if [[ -n "$TUNNEL_URL" ]]; then
   echo -e "       ${CYAN}     $TUNNEL_URL/api/messages/send/text${RESET}"
 fi
 echo
+echo -e "  ${BOLD}3. Once paired, that same /pair page becomes your console${RESET}"
+echo -e "       — copy-paste API examples, webhook setup, and a one-click smoke test."
+echo
+echo -e "  ${YELLOW}${BOLD}⚠ This public URL is TEMPORARY${RESET}${YELLOW} — a free Quick Tunnel whose address"
+echo -e "     changes on every restart. For production, point a stable ${BOLD}subdomain${RESET}${YELLOW} at the"
+echo -e "     Hub with a Cloudflare Named Tunnel:${RESET}"
+echo -e "       ${CYAN}$INSTALL_DIR/deploy/cloudflared-setup.sh${RESET}   (guide: ${CYAN}$INSTALL_DIR/docs/DEPLOY.md${RESET})"
+echo
 echo -e "  ${BOLD}Logs:${RESET}             journalctl -u wa-hub -f"
 echo -e "  ${BOLD}Tunnel logs:${RESET}      journalctl -u cloudflared-wahub -f"
 echo

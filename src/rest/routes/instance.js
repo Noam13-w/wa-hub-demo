@@ -109,6 +109,26 @@ instanceRouter.get('/diagnose', async (_req, res, next) => {
   }
 });
 
+// Post-pairing smoke test. Sends a confirmation message to the operator's OWN
+// number so they SEE the API work end-to-end inside WhatsApp — the most concrete
+// "it's alive" signal. Token-gated; only works once connected (we need state.me
+// to know where to send). Triggered by the "Send test" button on the /pair console.
+instanceRouter.post('/smoketest', async (_req, res, next) => {
+  try {
+    const sock = getSocket();
+    if (state.connection !== 'connected' || !sock || !state.me?.jid) {
+      return res.status(503).json({ error: 'not_connected', state: state.connection });
+    }
+    const text =
+      `✅ wa-hub is connected. Your WhatsApp HTTP API on "${config.HUB_NAME}" is live — ` +
+      `this message was sent by the API itself via POST /api/messages/send/text.`;
+    const sent = await sock.sendMessage(state.me.jid, { text });
+    res.json({ ok: true, sentTo: state.me.number, id: sent?.key?.id, timestamp: Date.now() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 instanceRouter.post('/logout', requireAdmin, async (_req, res, next) => {
   try {
     await resetAuth();
