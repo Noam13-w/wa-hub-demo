@@ -104,6 +104,24 @@ got="$(patch_unit 3062 | grep -oE 'http://127\.0\.0\.1:[0-9]+')"
 eq "relocated → unit now targets 3062" "$got" "http://127.0.0.1:3062"
 isfalse grep -q '127.0.0.1:3060' <(patch_unit 3062)   # old port fully gone
 
+echo "── install.sh: env-port read survives set -euo pipefail on an OLD .env ──"
+# Regression test for the audit's HIGH finding: a re-install over a .env that
+# predates HUB_PORT must NOT abort the installer. The read uses '|| true' so a
+# grep miss falls back to the default instead of tripping pipefail+set -e.
+OLD_ENV="$(mktemp)"; printf 'HUB_TOKEN=abc\nWEBHOOK_SECRET=def\n' > "$OLD_ENV"   # no HUB_PORT/WS_PORT
+good="$(bash -c 'set -euo pipefail; f="'"$OLD_ENV"'"
+  HUB_PORT=$(grep ^HUB_PORT "$f" | cut -d= -f2- || true); HUB_PORT="${HUB_PORT:-3060}"
+  echo "$HUB_PORT"' 2>/dev/null)"; rc=$?
+eq "guarded read falls back to 3060 (no abort)" "$good" "3060"
+eq "guarded read exits clean" "$rc" "0"
+# Prove the test bites: the UNGUARDED pattern (what shipped last turn) aborts.
+bash -c 'set -euo pipefail; f="'"$OLD_ENV"'"
+  HUB_PORT=$(grep ^HUB_PORT "$f" | cut -d= -f2-); HUB_PORT="${HUB_PORT:-3060}"
+  echo "$HUB_PORT"' >/dev/null 2>&1
+eq "unguarded pattern would have aborted (proves regression was real)" "$?" "1"
+rm -f "$OLD_ENV"
+istrue grep -q 'grep \^HUB_PORT "\$ENV_FILE" | cut -d= -f2- || true' "$INSTALL_SH"
+
 echo "── cloudflared-setup.sh: HUB_PORT read from .env (grep|cut snippet) ──"
 TMP_ENV="$(mktemp)"; printf 'HUB_TOKEN=x\nHUB_PORT=3070\nWS_PORT=3071\n' > "$TMP_ENV"
 read_hub_port() {  # mirrors the snippet added to cloudflared-setup.sh

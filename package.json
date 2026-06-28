@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node deploy/test/app-smoke.test.mjs",
+    "test:install": "bash deploy/test/port-selection.test.sh"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

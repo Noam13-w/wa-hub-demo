@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSocket } from '../../baileys/socket.js';
+import { getSocket, currentSock } from '../../baileys/socket.js';
 import { normalizeJid } from '../../baileys/jid.js';
 import { state } from '../../state.js';
 import { config } from '../../config.js';
 import { safeFetchToBuffer } from '../../net/egress.js';
 import { createGate } from '../../util/gate.js';
-import { pacedSend } from '../../baileys/sendQueue.js';
+import { pacedSend, pacedRun } from '../../baileys/sendQueue.js';
+import { jsonSmall, jsonMedia } from '../bodyParsers.js';
 
 export const messagesRouter = Router();
 
@@ -95,7 +96,7 @@ async function resolveMediaContent(field, body) {
 const wrap = (h) => (req, res, next) => Promise.resolve(h(req, res, next)).catch(next);
 
 // ─── Routes ────────────────────────────────────────────────────────────
-messagesRouter.post('/send/text', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/text', jsonSmall, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.extend({
     text: z.string().min(1).max(4096),
     quotedMessageId: z.string().optional(),
@@ -104,11 +105,11 @@ messagesRouter.post('/send/text', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => getSocket().sendMessage(jid, { text: parsed.data.text }), { textLen: parsed.data.text.length });
+  const sent = await pacedSend(jid, () => currentSock().sendMessage(jid, { text: parsed.data.text }), { textLen: parsed.data.text.length });
   res.json({ ok: true, id: sent?.key?.id, to: jid, timestamp: Date.now() });
 }));
 
-messagesRouter.post('/send/image', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/image', jsonMedia, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.and(mediaSource('image')).and(
     z.object({ caption: z.string().max(1024).optional() }),
   );
@@ -116,14 +117,17 @@ messagesRouter.post('/send/image', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => mediaGate.run(async () => {
+  // mediaGate bounds concurrent media work (fetch+decode+send) so peak Buffers
+  // stay well under the 512 MB cap. We resolve the bytes BEFORE entering the pace
+  // queue so a slow media fetch can't head-of-line-block queued text sends.
+  const sent = await mediaGate.run(async () => {
     const image = await resolveMediaContent('image', parsed.data);
-    return getSocket().sendMessage(jid, { image, caption: parsed.data.caption });
-  }), { textLen: (parsed.data.caption || '').length });
+    return pacedSend(jid, () => currentSock().sendMessage(jid, { image, caption: parsed.data.caption }), { textLen: (parsed.data.caption || '').length });
+  });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
 
-messagesRouter.post('/send/file', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/file', jsonMedia, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.and(mediaSource('file')).and(
     z.object({
       filename: z.string().min(1).max(255),
@@ -135,19 +139,19 @@ messagesRouter.post('/send/file', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => mediaGate.run(async () => {
+  const sent = await mediaGate.run(async () => {
     const document = await resolveMediaContent('file', parsed.data);
-    return getSocket().sendMessage(jid, {
+    return pacedSend(jid, () => currentSock().sendMessage(jid, {
       document,
       fileName: parsed.data.filename,
       mimetype: parsed.data.mimetype,
       caption: parsed.data.caption,
-    });
-  }), { textLen: (parsed.data.caption || '').length });
+    }), { textLen: (parsed.data.caption || '').length });
+  });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
 
-messagesRouter.post('/send/audio', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/audio', jsonMedia, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.and(mediaSource('audio')).and(
     z.object({ ptt: z.boolean().default(true) }),
   );
@@ -155,18 +159,18 @@ messagesRouter.post('/send/audio', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => mediaGate.run(async () => {
+  const sent = await mediaGate.run(async () => {
     const audio = await resolveMediaContent('audio', parsed.data);
-    return getSocket().sendMessage(jid, {
+    return pacedSend(jid, () => currentSock().sendMessage(jid, {
       audio,
       mimetype: 'audio/ogg; codecs=opus',
       ptt: parsed.data.ptt,
-    });
-  }), {});
+    }), {});
+  });
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
 
-messagesRouter.post('/send/location', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/location', jsonSmall, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.extend({
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
@@ -177,7 +181,7 @@ messagesRouter.post('/send/location', requireConnected, wrap(async (req, res) =>
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => getSocket().sendMessage(jid, {
+  const sent = await pacedSend(jid, () => currentSock().sendMessage(jid, {
     location: {
       degreesLatitude: parsed.data.latitude,
       degreesLongitude: parsed.data.longitude,
@@ -188,7 +192,7 @@ messagesRouter.post('/send/location', requireConnected, wrap(async (req, res) =>
   res.json({ ok: true, id: sent?.key?.id, to: jid });
 }));
 
-messagesRouter.post('/send/reaction', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/send/reaction', jsonSmall, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.extend({
     messageId: z.string().min(1).max(255),
     emoji: z.string().min(0).max(8),
@@ -198,7 +202,7 @@ messagesRouter.post('/send/reaction', requireConnected, wrap(async (req, res) =>
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  const sent = await pacedSend(jid, () => getSocket().sendMessage(jid, {
+  const sent = await pacedSend(jid, () => currentSock().sendMessage(jid, {
     react: {
       text: parsed.data.emoji,
       key: { remoteJid: jid, id: parsed.data.messageId, fromMe: parsed.data.fromMe },
@@ -207,7 +211,7 @@ messagesRouter.post('/send/reaction', requireConnected, wrap(async (req, res) =>
   res.json({ ok: true, id: sent?.key?.id });
 }));
 
-messagesRouter.post('/markRead', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/markRead', jsonSmall, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.extend({
     messageId: z.string().min(1).max(255),
     fromMe: z.boolean().default(false),
@@ -216,14 +220,16 @@ messagesRouter.post('/markRead', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  await getSocket().readMessages([{ remoteJid: jid, id: parsed.data.messageId, fromMe: parsed.data.fromMe }]);
+  // Through the FIFO serializer (no typing) so it shares the anti-ban pacing and
+  // can't race the socket going away after requireConnected.
+  await pacedRun(() => currentSock().readMessages([{ remoteJid: jid, id: parsed.data.messageId, fromMe: parsed.data.fromMe }]));
   res.json({ ok: true });
 }));
 
 // Send a chatstate (typing / recording / online / offline) to a chat. No message
 // is sent — useful as a "humanizer" and for live UIs. The send queue can also do
 // this automatically before each message when SEND_TYPING=true.
-messagesRouter.post('/presence', requireConnected, wrap(async (req, res) => {
+messagesRouter.post('/presence', jsonSmall, requireConnected, wrap(async (req, res) => {
   const schema = baseTo.extend({
     type: z.enum(['composing', 'recording', 'paused', 'available', 'unavailable']),
   });
@@ -231,6 +237,8 @@ messagesRouter.post('/presence', requireConnected, wrap(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
 
   const jid = normalizeJid(parsed.data.to);
-  await getSocket().sendPresenceUpdate(parsed.data.type, jid);
+  // Through the FIFO serializer so presence shares the pacing and survives a socket
+  // drop after requireConnected. With default pacing (0ms) this only serializes.
+  await pacedRun(() => currentSock().sendPresenceUpdate(parsed.data.type, jid));
   res.json({ ok: true });
 }));

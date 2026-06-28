@@ -88,3 +88,19 @@ export const healthRateLimit = rateLimit({
   validate: rateValidate,
   message: { error: 'rate_limited' },
 });
+
+// Coarse, always-on flood guard applied to EVERY request BEFORE the JSON body is
+// parsed (and before auth). Without it an unauthenticated client could stream
+// large bodies to any path — including /api before requireAuth runs — and make
+// the process buffer/parse them, an availability/OOM risk on the 512 MB-capped
+// box. The ceiling is deliberately generous (well above the per-route API quota)
+// so it only ever trips on an actual flood, never on legitimate traffic.
+export const globalRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: Math.max((config.RATE_LIMIT_PER_MIN || 0) * 4, 600),
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  validate: rateValidate,
+  message: { error: 'rate_limited' },
+});

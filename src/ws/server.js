@@ -51,6 +51,13 @@ export function startWsServer() {
   });
 
   wss.on('connection', (ws, req) => {
+    // Per-socket error handler FIRST — before any rejection path. A rejected socket
+    // (capacity/origin/token) still lingers through its ~30s close handshake, during
+    // which an inbound malformed/oversized frame makes `ws` emit 'error'. With no
+    // listener that becomes an uncaughtException → the whole process exits. So every
+    // socket, including the ones we're about to close, must have an error listener.
+    ws.on('error', (err) => log.warn({ err: err.message }, 'ws client error'));
+
     // Cap simultaneous clients so connection floods can't exhaust memory/FDs.
     if (wss.clients.size > config.WS_MAX_CLIENTS) {
       ws.close(1013, 'try_again_later');
@@ -65,8 +72,6 @@ export function startWsServer() {
       ws.close(4001, 'unauthorized');
       return;
     }
-    // Per-socket error handler so a client reset can't crash the whole process.
-    ws.on('error', (err) => log.warn({ err: err.message }, 'ws client error'));
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     log.info({ remote: req.socket.remoteAddress }, 'ws client connected');

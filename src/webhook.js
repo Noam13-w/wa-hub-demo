@@ -5,6 +5,7 @@ import { logger } from './logger.js';
 import { state } from './state.js';
 import { incrPending, decrPending, recordWebhookFailure } from './diagnostics.js';
 import { assertSafeUrl, guardedAgent } from './net/egress.js';
+import { createGate } from './util/gate.js';
 
 const log = logger.child({ mod: 'webhook' });
 
@@ -12,6 +13,19 @@ const log = logger.child({ mod: 'webhook' });
 // Total worst case: ~26 s wall-clock (0 + 2 + 6 + 18). Still fire-and-forget.
 const BACKOFF_MS = [0, 2_000, 6_000, 18_000];
 const MAX_ATTEMPTS = BACKOFF_MS.length;
+
+// Bound concurrent in-flight deliveries (and the backlog behind them) so a slow or
+// failing receiver during an inbound burst can't accumulate unbounded retained
+// bodies, ~26 s retry timers, and sockets. Past the backlog cap we SHED rather
+// than buffer. Concurrency >1 (not a strict FIFO) avoids one failing event head-of-
+// line-blocking all others for the full retry window; ordering is instead made
+// recoverable by the monotonic per-event sequence number in the signed envelope.
+const deliveryGate = createGate(config.WEBHOOK_CONCURRENCY, config.WEBHOOK_MAX_QUEUE);
+
+// Monotonic, per-process delivery sequence. Included in the SIGNED envelope and the
+// x-hub-sequence header so receivers can order events and detect gaps. Resets to 0
+// on restart (document delivery as at-least-once, unordered-but-sequenced).
+let seqCounter = 0;
 
 /**
  * Sign a JSON body with HMAC-SHA256 (compatible with GitHub-style `sha256=<hex>` header).
@@ -56,6 +70,7 @@ async function postOnce(url, body, signature, event, headers) {
         'x-hub-event': event,
         'x-hub-timestamp': headers.timestamp,
         'x-hub-delivery': headers.delivery,
+        'x-hub-sequence': headers.seq,
         'user-agent': `wa-hub-demo/${config.HUB_NAME}`,
       },
       body,
@@ -99,8 +114,10 @@ async function deliver(event, data) {
   }
 
   const timestamp = Date.now();
+  const seq = ++seqCounter;
   const payload = {
     event,
+    seq,
     timestamp,
     instance: config.HUB_NAME,
     data,
@@ -108,56 +125,77 @@ async function deliver(event, data) {
   const body = JSON.stringify(payload);
   const signature = sign(body);
   // Per-delivery id lets receivers dedup retries (replay protection alongside
-  // the timestamp). Same id is reused across this delivery's retry attempts.
-  const deliveryHeaders = { timestamp: String(timestamp), delivery: randomUUID() };
+  // the timestamp). Same id + seq are reused across this delivery's retry attempts.
+  const deliveryHeaders = { timestamp: String(timestamp), delivery: randomUUID(), seq: String(seq) };
 
   incrPending();
   const startedAt = Date.now();
-  let lastResult = null;
 
   try {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const wait = BACKOFF_MS[attempt - 1];
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    await deliveryGate.run(async () => {
+      let lastResult = null;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const wait = BACKOFF_MS[attempt - 1];
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
-      lastResult = await postOnce(url, body, signature, event, deliveryHeaders);
+        lastResult = await postOnce(url, body, signature, event, deliveryHeaders);
 
-      // Structured log per attempt (useful for tracing tail-latency).
-      log.info(
-        {
-          event,
-          attempt,
-          maxAttempts: MAX_ATTEMPTS,
-          statusCode: lastResult.statusCode,
-          ok: lastResult.ok,
-          ms: lastResult.ms,
-          err: lastResult.err,
-        },
-        lastResult.ok ? 'webhook delivered' : 'webhook attempt failed',
-      );
-
-      if (lastResult.ok) return;
-      if (!isRetryable(lastResult)) {
-        log.warn(
-          { event, statusCode: lastResult.statusCode, err: lastResult.err },
-          'webhook delivery aborted — receiver returned non-retryable status',
+        // Structured log per attempt (useful for tracing tail-latency).
+        log.info(
+          {
+            event,
+            seq,
+            attempt,
+            maxAttempts: MAX_ATTEMPTS,
+            statusCode: lastResult.statusCode,
+            ok: lastResult.ok,
+            ms: lastResult.ms,
+            err: lastResult.err,
+          },
+          lastResult.ok ? 'webhook delivered' : 'webhook attempt failed',
         );
-        break;
-      }
-    }
 
-    // Got here → all attempts exhausted or aborted early.
+        if (lastResult.ok) return;
+        if (!isRetryable(lastResult)) {
+          log.warn(
+            { event, statusCode: lastResult.statusCode, err: lastResult.err },
+            'webhook delivery aborted — receiver returned non-retryable status',
+          );
+          break;
+        }
+      }
+
+      // Got here → all attempts exhausted or aborted early.
+      recordWebhookFailure({
+        event,
+        url,
+        attempts: MAX_ATTEMPTS,
+        lastStatus: lastResult?.statusCode,
+        lastError: lastResult?.err,
+        totalMs: Date.now() - startedAt,
+      });
+      log.warn(
+        { event, url, statusCode: lastResult?.statusCode, err: lastResult?.err, totalMs: Date.now() - startedAt },
+        'webhook delivery FAILED — recorded to webhook-failures.json',
+      );
+    });
+  } catch (err) {
+    // The only thing deliveryGate.run throws (the inner loop swallows its own
+    // errors) is the 503 load-shed when the backlog is full.
+    const shed = err?.code === 'server_busy';
     recordWebhookFailure({
       event,
       url,
-      attempts: MAX_ATTEMPTS,
-      lastStatus: lastResult?.statusCode,
-      lastError: lastResult?.err,
+      attempts: 0,
+      lastStatus: null,
+      lastError: shed ? 'shed_backlog_full' : (err?.code || 'delivery_error'),
       totalMs: Date.now() - startedAt,
     });
     log.warn(
-      { event, url, statusCode: lastResult?.statusCode, err: lastResult?.err, totalMs: Date.now() - startedAt },
-      'webhook delivery FAILED — recorded to webhook-failures.json',
+      { event, url, err: err?.code || err?.message },
+      shed
+        ? 'webhook delivery SHED — backlog full (raise WEBHOOK_MAX_QUEUE or fix the slow receiver)'
+        : 'webhook delivery error',
     );
   } finally {
     decrPending();

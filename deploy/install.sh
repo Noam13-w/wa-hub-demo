@@ -136,11 +136,35 @@ if [[ "$HARDEN_MODE" == "safe" ]]; then
 # Only disable password auth if an SSH key is already authorized — otherwise we
 # would lock the operator out of a password-only server.
 elif [[ -s /root/.ssh/authorized_keys ]] || ls /home/*/.ssh/authorized_keys >/dev/null 2>&1; then
+  # Write the hardening to a drop-in that sorts BEFORE cloud-init's. sshd reads
+  # sshd_config.d/*.conf (via the Include at the TOP of sshd_config) in alphanumeric
+  # order and is FIRST-VALUE-WINS — so 00-* beats both 50-cloud-init.conf (which
+  # ships `PasswordAuthentication yes` on Ubuntu cloud images) and the main file.
+  # Editing only the main file silently loses to that cloud-init drop-in.
+  install -d -m 755 /etc/ssh/sshd_config.d
+  cat >/etc/ssh/sshd_config.d/00-wa-hub-hardening.conf <<'SSHD'
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+PermitEmptyPasswords no
+SSHD
+  chmod 644 /etc/ssh/sshd_config.d/00-wa-hub-hardening.conf
+  # Also patch the main file, for minimal images that have no Include/drop-in dir.
   sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
   sed -i 's/^#*PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
   sed -i 's/^#*PermitEmptyPasswords .*/PermitEmptyPasswords no/' /etc/ssh/sshd_config
-  sshd -t && systemctl reload ssh
-  ok "sshd: password auth disabled, root login key-only"
+  if sshd -t 2>/dev/null; then
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+    # Verify the EFFECTIVE value (sshd -T), not just that we wrote a file.
+    if sshd -T 2>/dev/null | grep -qi '^passwordauthentication no'; then
+      ok "sshd: password auth disabled (verified effective), root login key-only"
+    else
+      warn "sshd reloaded but PasswordAuthentication is still effectively 'yes' — check for an overriding drop-in in /etc/ssh/sshd_config.d/"
+    fi
+  else
+    # Don't leave a config that fails validation (a later restart would break SSH).
+    rm -f /etc/ssh/sshd_config.d/00-wa-hub-hardening.conf
+    warn "sshd config test failed — reverted the hardening drop-in to avoid a broken sshd; review /etc/ssh/sshd_config manually"
+  fi
 else
   warn "No authorized SSH key found — leaving password auth ENABLED to avoid lockout."
   warn "Add your key (ssh-copy-id), then set 'PasswordAuthentication no' in /etc/ssh/sshd_config."
@@ -208,12 +232,15 @@ step "[7/8] Generating secrets and installing systemd unit"
 ENV_FILE="$INSTALL_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
   warn ".env already exists — keeping existing secrets"
-  HUB_TOKEN=$(grep ^HUB_TOKEN "$ENV_FILE" | cut -d= -f2-)
-  WEBHOOK_SECRET=$(grep ^WEBHOOK_SECRET "$ENV_FILE" | cut -d= -f2-)
+  # The `|| true` on every read is load-bearing: under `set -euo pipefail` a grep
+  # MISS (exit 1) on a key a given .env happens not to have would otherwise abort
+  # the whole installer mid-step-7 — before the `${VAR:-default}` fallback runs.
+  HUB_TOKEN=$(grep ^HUB_TOKEN "$ENV_FILE" | cut -d= -f2- || true)
+  WEBHOOK_SECRET=$(grep ^WEBHOOK_SECRET "$ENV_FILE" | cut -d= -f2- || true)
   # Reuse the ports already committed to .env so the tunnel below points at the
   # right origin (fall back to the defaults if an old .env predates these keys).
-  HUB_PORT=$(grep ^HUB_PORT "$ENV_FILE" | cut -d= -f2-); HUB_PORT="${HUB_PORT:-3060}"
-  WS_PORT=$(grep ^WS_PORT "$ENV_FILE" | cut -d= -f2-);   WS_PORT="${WS_PORT:-3061}"
+  HUB_PORT=$(grep ^HUB_PORT "$ENV_FILE" | cut -d= -f2- || true); HUB_PORT="${HUB_PORT:-3060}"
+  WS_PORT=$(grep ^WS_PORT "$ENV_FILE" | cut -d= -f2- || true);   WS_PORT="${WS_PORT:-3061}"
 else
   HUB_TOKEN=$(openssl rand -hex 32)
   WEBHOOK_SECRET=$(openssl rand -hex 32)
@@ -251,7 +278,16 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 # that the strict default blocks → core-dump status=31/SYS).
 install -m 644 "$INSTALL_DIR/deploy/wa-hub.service" /etc/systemd/system/wa-hub.service
 mkdir -p /etc/systemd/system/wa-hub.service.d
-printf '[Service]\nSystemCallFilter=\n' > /etc/systemd/system/wa-hub.service.d/syscall-fix.conf
+# Clear any strict SystemCallFilter so Node 20 doesn't core-dump (status=31/SYS).
+# BUT only when the opt-in seccomp hardening drop-in is NOT present: that drop-in
+# sets its OWN (Node-safe, EPERM-fallback) SystemCallFilter, and an empty reset
+# here — which sorts AFTER 'hardening.conf' lexicographically — would wipe it.
+if [[ ! -f /etc/systemd/system/wa-hub.service.d/hardening.conf ]]; then
+  printf '[Service]\nSystemCallFilter=\n' > /etc/systemd/system/wa-hub.service.d/syscall-fix.conf
+else
+  rm -f /etc/systemd/system/wa-hub.service.d/syscall-fix.conf
+  ok "seccomp hardening drop-in present — leaving its SystemCallFilter in place"
+fi
 
 systemctl daemon-reload
 systemctl enable --now wa-hub.service >/dev/null

@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { apiRateLimit, healthRateLimit, requireAuth } from '../auth.js';
+import { apiRateLimit, healthRateLimit, globalRateLimit, requireAuth } from '../auth.js';
+import { jsonSmall } from './bodyParsers.js';
 import { state } from '../state.js';
 import { recordError } from '../diagnostics.js';
 import { pairPageHtml } from './pairPage.js';
@@ -28,12 +29,16 @@ export function buildApp() {
   // trust every hop and let clients spoof IPs to bypass the limiter.
   if (config.TRUST_PROXY) app.set('trust proxy', 1);
 
-  // Body parser — we accept up to 20MB to allow base64-encoded media.
-  // (Per-route validators ALSO check the decoded base64 length so we reject
-  //  oversized media with a clear `error: "file_too_large"` JSON response
-  //  rather than the Express default HTML.)
-  app.use(express.json({ limit: '20mb' }));
   app.disable('x-powered-by');
+
+  // Coarse flood guard FIRST — before any body is parsed and before auth — so an
+  // unauthenticated client can't make us buffer/parse large bodies on any path.
+  app.use(globalRateLimit);
+
+  // NOTE: there is deliberately NO global JSON body parser. Bodies are parsed per
+  // router/route (jsonSmall by default, jsonMedia only on the media send routes),
+  // and crucially only AFTER the /api router's requireAuth — so a 20 MB parser is
+  // never reachable by an unauthenticated caller. See ./bodyParsers.js.
 
   // Structured per-request access log (method, path, status, ms). Skips /healthz to keep journal clean.
   // NOTE: we deliberately do NOT log headers or bodies — auth tokens and webhook payloads can contain
@@ -85,14 +90,16 @@ export function buildApp() {
 
   // ── Authenticated API ─────────────────────────────────────────────────
   const api = express.Router();
-  // Rate-limit BEFORE auth so brute-force attempts against the token are
-  // throttled too — not just successfully-authenticated requests.
+  // Rate-limit and authenticate BEFORE any body is parsed — brute-force attempts
+  // against the token are throttled, and no body parser runs until the caller is
+  // authenticated. Bodies are then parsed per sub-router: jsonSmall for the small
+  // payloads, and messages mounts jsonMedia itself on just its media routes.
   api.use(apiRateLimit);
   api.use(requireAuth);
-  api.use('/instance', instanceRouter);
+  api.use('/instance', jsonSmall, instanceRouter);
   api.use('/messages', messagesRouter);
-  api.use('/groups', groupsRouter);
-  api.use('/check', checkRouter);
+  api.use('/groups', jsonSmall, groupsRouter);
+  api.use('/check', jsonSmall, checkRouter);
   app.use('/api', api);
 
   // 404 — always JSON, never HTML.
@@ -108,7 +115,7 @@ export function buildApp() {
     if (res.headersSent) return;
     // Express's bodyParser JSON-too-large surfaces here with type 'entity.too.large'.
     if (err?.type === 'entity.too.large') {
-      return res.status(413).json({ error: 'payload_too_large', message: 'Request body exceeds 20 MB limit' });
+      return res.status(413).json({ error: 'payload_too_large', message: 'Request body exceeds the size limit for this route' });
     }
     // Malformed JSON body is a client error (400), not a server error (500).
     if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {

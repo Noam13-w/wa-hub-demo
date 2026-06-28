@@ -10,9 +10,14 @@
 #
 #   sudo install -m 644 deploy/wa-hub.hardening.conf.example \
 #       /etc/systemd/system/wa-hub.service.d/hardening.conf
+#   # Remove the installer's empty reset — it sorts AFTER hardening.conf and would
+#   # otherwise wipe the SystemCallFilter this drop-in sets (the installer also
+#   # skips writing it on future runs once hardening.conf exists):
+#   sudo rm -f /etc/systemd/system/wa-hub.service.d/syscall-fix.conf
 #   sudo systemctl daemon-reload
 #   sudo systemctl restart wa-hub.service
 #   systemctl is-active wa-hub.service        # must say "active"
+#   systemctl show -p SystemCallFilter wa-hub.service   # confirm the filter is set
 #   journalctl -u wa-hub.service -n 30        # confirm no status=SYS / SIGSYS
 #
 # If the service fails to start (status=31/SYS), simply remove the drop-in:

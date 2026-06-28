@@ -1,4 +1,4 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import QRCode from 'qrcode';
 import baileys, {
@@ -7,12 +7,12 @@ import baileys, {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
-  useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { state } from '../state.js';
 import { normalizeMessage } from './normalize.js';
+import { useAtomicMultiFileAuthState } from './authState.js';
 
 const log = logger.child({ mod: 'baileys' });
 const makeWASocket = baileys.default ?? baileys;
@@ -21,6 +21,11 @@ let sock = null;
 let reconnectAttempts = 0;
 let stableTimer = null;
 let reconnectTimer = null;
+// In-flight startSocket() promise. Concurrent callers (the reconnect timer, the
+// QR re-arm timer, resetAuth, the initial boot) coalesce onto this single promise
+// so we never run two boots at once — which would otherwise open two live sockets
+// and have both write creds into the same auth dir (corruption / dual sessions).
+let starting = null;
 // True once we've reached a live ('open') connection at least once. Used to tell
 // normal QR-pairing churn (fast, benign) apart from a real connection that dropped
 // (where exponential backoff is appropriate). Reset on resetAuth() so re-pairing
@@ -38,12 +43,31 @@ export function getSocket() {
 }
 
 /**
+ * Like getSocket(), but throws a client-safe 503 when the socket is absent or the
+ * connection isn't live. Call this INSIDE a queued/delayed send (where the socket
+ * may have dropped between the route's requireConnected check and the actual send)
+ * so the caller gets a clean 503 instead of a TypeError → 500.
+ */
+export function currentSock() {
+  if (state.connection !== 'connected' || !sock) {
+    const err = new Error('not_connected');
+    err.status = 503;
+    err.code = 'not_connected';
+    throw err;
+  }
+  return sock;
+}
+
+/**
  * Cleanly close the socket without wiping auth. Used by graceful shutdown.
  */
 export async function closeSocket() {
   // Cancel any pending reconnect/stable timers so they don't fire after shutdown.
   if (stableTimer) { clearTimeout(stableTimer); stableTimer = null; }
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  // Let any in-flight boot settle so it can't assign a fresh socket after we've
+  // torn this one down (which would leak it past shutdown).
+  if (starting) { try { await starting; } catch { /* ignore */ } }
   if (!sock) return;
   try {
     sock.ev.removeAllListeners();
@@ -60,51 +84,71 @@ export async function closeSocket() {
 export async function resetAuth() {
   if (stableTimer) { clearTimeout(stableTimer); stableTimer = null; }
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  try { await rm(AUTH_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+  // Wait out any boot already in progress, so we don't rm the auth dir from under
+  // a start that's mid-read (or have its creds.update re-create files we just wiped).
+  if (starting) { try { await starting; } catch { /* ignore */ } }
+  // Detach the live socket BEFORE deleting the dir: removeAllListeners() drops the
+  // creds.update→saveCreds handler, so no pending save can re-write creds.json
+  // into the directory we're about to delete (an incomplete logout).
   if (sock) {
     try { sock.ev.removeAllListeners(); sock.end(new Error('manual logout')); } catch { /* ignore */ }
     sock = null;
   }
+  try { await rm(AUTH_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
   reconnectAttempts = 0;
   everConnected = false;
   await startSocket();
 }
 
 /**
- * Boot the Baileys socket. Idempotent — safe to call from index.js once.
+ * Boot the Baileys socket. Idempotent and re-entrancy-safe — concurrent callers
+ * coalesce onto a single in-flight boot (see `starting`) so we never run two boots
+ * at once. Safe to call from index.js once, and from the reconnect/QR timers.
  */
-export async function startSocket() {
-  // If a previous socket is still around (e.g. a reconnect after a half-open
-  // close), detach its listeners and end it so we never leak sockets/listeners.
-  if (sock) {
-    try { sock.ev.removeAllListeners(); sock.end(undefined); } catch { /* ignore */ }
-    sock = null;
-  }
-  await mkdir(AUTH_DIR, { recursive: true });
+export function startSocket() {
+  if (starting) return starting;
+  starting = (async () => {
+    // If a previous socket is still around (e.g. a reconnect after a half-open
+    // close), detach its listeners and end it so we never leak sockets/listeners.
+    if (sock) {
+      try { sock.ev.removeAllListeners(); sock.end(undefined); } catch { /* ignore */ }
+      sock = null;
+    }
 
-  const { state: authState, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  log.info({ version, isLatest }, 'using Baileys protocol version');
+    // useAtomicMultiFileAuthState mkdir's the folder and writes creds atomically.
+    const { state: authState, saveCreds } = await useAtomicMultiFileAuthState(AUTH_DIR);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    log.info({ version, isLatest }, 'using Baileys protocol version');
 
-  sock = makeWASocket({
-    version,
-    auth: {
-      creds: authState.creds,
-      keys: makeCacheableSignalKeyStore(authState.keys, logger.child({ mod: 'baileys.keys', level: 'warn' })),
-    },
-    logger: logger.child({ mod: 'baileys.lib', level: 'warn' }),
-    browser: Browsers.macOS(config.HUB_NAME),
-    syncFullHistory: false,
-    markOnlineOnConnect: false,
-    generateHighQualityLinkPreview: false,
-  });
+    sock = makeWASocket({
+      version,
+      auth: {
+        creds: authState.creds,
+        // The `{ level: 'warn' }` MUST be the 2nd (options) arg, not a field in the
+        // bindings object — otherwise pino treats it as a logged field and the child
+        // inherits the parent's level, leaking Signal key ops / message content at
+        // a debug/trace LOG_LEVEL. Same for the library logger below.
+        keys: makeCacheableSignalKeyStore(authState.keys, logger.child({ mod: 'baileys.keys' }, { level: 'warn' })),
+      },
+      logger: logger.child({ mod: 'baileys.lib' }, { level: 'warn' }),
+      browser: Browsers.macOS(config.HUB_NAME),
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false,
+    });
 
-  sock.ev.on('creds.update', saveCreds);
-  sock.ev.on('connection.update', (update) => handleConnectionUpdate(update));
-  sock.ev.on('messages.upsert', (evt) => handleMessagesUpsert(evt));
-  sock.ev.on('messages.update', (updates) => handleMessageStatusUpdate(updates));
+    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('connection.update', (update) => handleConnectionUpdate(update));
+    sock.ev.on('messages.upsert', (evt) => handleMessagesUpsert(evt));
+    sock.ev.on('messages.update', (updates) => handleMessageStatusUpdate(updates));
 
-  return sock;
+    return sock;
+  })();
+
+  // Clear the in-flight marker once the boot settles (success or failure), so the
+  // next reconnect/start runs fresh rather than returning a stale resolved promise.
+  starting.then(() => { starting = null; }, () => { starting = null; });
+  return starting;
 }
 
 async function handleConnectionUpdate(update) {
@@ -121,7 +165,10 @@ async function handleConnectionUpdate(update) {
   }
 
   if (connection === 'open') {
-    reconnectAttempts = 0;
+    // NB: do NOT reset reconnectAttempts here. A flapping link (open→close→open…)
+    // would then never escalate its backoff — it'd reconnect every ~2s forever,
+    // which is itself a ban signal. The stableTimer below is the SOLE resetter:
+    // attempts only clear after 30s of CONTINUOUS uptime.
     everConnected = true;
     const me = sock?.user
       ? {
@@ -138,6 +185,10 @@ async function handleConnectionUpdate(update) {
   }
 
   if (connection === 'close') {
+    // The connection dropped before reaching 30s of stability — cancel the pending
+    // stability reset so a short-lived 'open' can't later zero the backoff counter
+    // while we're already disconnected and climbing the backoff.
+    if (stableTimer) { clearTimeout(stableTimer); stableTimer = null; }
     const code = lastDisconnect?.error?.output?.statusCode;
     const loggedOut = code === DisconnectReason.loggedOut;
     // 440 = connectionReplaced — another session took over this device.

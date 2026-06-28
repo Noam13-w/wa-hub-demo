@@ -79,7 +79,10 @@ lives behind the token at [`GET /api/instance/status`](#get-apiinstancestatus) a
 ## Messages — `/api/messages`
 
 All send routes return `503 { "error": "not_connected" }` if WhatsApp isn't paired/connected yet.
-Media may be supplied as a public `…Url` **or** base64 `…Base64` (max **20 MB decoded**; oversize → `413`/`file_too_large`).
+Media may be supplied as a public `…Url` **or** base64 `…Base64` (max **20 MB**). Oversize behavior depends on the source:
+- oversized **media-by-URL** (`imageUrl`/`fileUrl`/`audioUrl` over the cap) → `413 { "error": "file_too_large" }`;
+- oversized **base64** (`…Base64`) → `400 { "error": "invalid_body" }` (the string `file_too_large` appears only inside `issues[].message`, **not** as the top-level `error`);
+- the whole **request body** over 20 MB → `413 { "error": "payload_too_large" }`.
 
 ### `POST /api/messages/send/text`
 ```json
@@ -125,6 +128,12 @@ Empty `emoji` removes a reaction. → `{ "ok": true, "id": "..." }`
 ```
 → `{ "ok": true }`
 
+### `POST /api/messages/presence`
+```json
+{ "to": "972501234567", "type": "composing" }
+```
+`type` ∈ `composing` | `recording` | `paused` | `available` | `unavailable`. Sends a chatstate only (no message is sent) — useful as a humanizer or for live UIs. → `{ "ok": true }`
+
 ---
 
 ## Instance — `/api/instance`
@@ -160,6 +169,18 @@ Last ≤50 route/unhandled errors (in-memory): `{ "count", "errors": [ ... ] }`.
 ### `GET /api/instance/diagnose`
 Runs a small self-test battery (socket open? webhook reachable? public probe) and returns a structured JSON. ~6 s worst case.
 
+### `GET /api/instance/health/wa`
+WhatsApp's **own** anti-abuse signals for this account (a network round-trip): the reachout **timelock** (is WhatsApp currently throttling messaging to *new* chats?) and the **new-chat message cap**. Watch these to back off *before* a ban — a rising/active timelock means "stop messaging strangers".
+```json
+{ "connection": "connected",
+  "reachoutTimelock": { },
+  "newChatMessageCap": { } }
+```
+Each sub-field falls back to `{ "error": "..." }` if that round-trip fails. `503 { "error": "not_connected" }` until paired.
+
+### `POST /api/instance/smoketest`
+Sends a confirmation message to the **paired account's own number** so you see the API work end-to-end inside WhatsApp. No request body. → `{ "ok": true, "sentTo": "972...", "id": "3EB0...", "timestamp": 1730000000000 }`. `503 { "error": "not_connected" }` until paired.
+
 ### `POST /api/instance/logout`
 Wipes `data/auth`, restarts Baileys, and a fresh QR appears shortly. → `{ "ok": true, "message": "..." }`
 
@@ -181,6 +202,77 @@ Full Baileys group metadata. `:jid` may be the bare 15+ digit id or `…@g.us`.
 { "add": ["972..."], "remove": ["972..."], "promote": ["972..."], "demote": ["972..."] }
 ```
 Each list ≤50. → `{ "ok": true, "results": { ... } }`
+
+### `POST /api/groups` — create a group
+```json
+{ "subject": "My group", "participants": ["972501234567"] }
+```
+`subject` 1–100. `participants` ≤50 (optional, defaults to `[]`). → `{ "ok": true, "jid": "...@g.us", "subject": "My group", "participants": 1 }`
+> ⚠ Bulk-creating groups or adding strangers is a top ban signal — use only with consenting participants.
+
+### `POST /api/groups/:jid/leave`
+Leave the group. → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/subject`
+```json
+{ "subject": "New name" }
+```
+`subject` 1–100. → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/description`
+```json
+{ "description": "≤2048 chars" }
+```
+Empty/omitted `description` clears it. → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/settings`
+```json
+{ "setting": "announcement" }
+```
+`setting` ∈ `announcement` | `not_announcement` | `locked` | `unlocked` (announcement = only admins post; locked = only admins edit group info). → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/ephemeral`
+```json
+{ "seconds": 604800 }
+```
+Disappearing messages: `0` off, `86400` (24h), `604800` (7d), `7776000` (90d). → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/member-add-mode`
+```json
+{ "mode": "admin_add" }
+```
+`mode` ∈ `admin_add` | `all_member_add`. → `{ "ok": true }`
+
+### `PUT /api/groups/:jid/join-approval`
+```json
+{ "mode": "on" }
+```
+`mode` ∈ `on` | `off`. → `{ "ok": true }`
+
+### `GET /api/groups/:jid/invite`
+Invite link/code (admin only). → `{ "ok": true, "code": "AbCd...", "url": "https://chat.whatsapp.com/AbCd..." }`
+
+### `POST /api/groups/:jid/invite/revoke`
+Revokes the current link and returns the new one (admin only). → `{ "ok": true, "code": "...", "url": "https://chat.whatsapp.com/..." }`
+
+### `GET /api/groups/:jid/requests`
+Pending join requests (admin only). → `{ "ok": true, "requests": [ ... ] }`
+
+### `POST /api/groups/:jid/requests`
+```json
+{ "participants": ["972501234567"], "action": "approve" }
+```
+`participants` 1–50. `action` ∈ `approve` | `reject`. → `{ "ok": true, "results": [ ... ] }`
+
+### `GET /api/groups/invite/:code`
+Preview a group from an invite code without joining (`:code` = the part after `chat.whatsapp.com/`, or the full link). → full Baileys group metadata.
+
+### `POST /api/groups/join`
+```json
+{ "code": "AbCd1234..." }
+```
+Join via invite `code` (≥6 chars; a full `chat.whatsapp.com/` link is also accepted). → `{ "ok": true, "jid": "...@g.us" }`
+> ⚠ Mass-joining is a spam signal — use sparingly.
 
 ---
 

@@ -57,6 +57,12 @@ async function main() {
   const httpServer = app.listen(config.HUB_PORT, config.HUB_HOST, () => {
     log.info({ port: config.HUB_PORT, host: config.HUB_HOST }, 'REST API listening');
   });
+  // DoS hardening on the raw server: cap concurrent sockets, and bound how long a
+  // client may take to send headers/the full request — so a slowloris-style trickle
+  // (or a flood of half-open sockets) can't tie up the 512 MB-capped process.
+  httpServer.maxConnections = 1024;
+  httpServer.headersTimeout = 20_000;
+  httpServer.requestTimeout = 30_000;
   // A bind failure (EADDRINUSE/EACCES) is emitted asynchronously as an 'error'
   // event — main()'s trailing .catch cannot see it — so handle it explicitly
   // and exit loudly (systemd Restart=always brings us back cleanly).

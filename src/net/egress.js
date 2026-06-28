@@ -28,11 +28,13 @@ import { config } from '../config.js';
  */
 
 export class EgressError extends Error {
-  constructor(code, message) {
+  constructor(code, message, status = 400) {
     super(message || code);
     this.name = 'EgressError';
     this.code = code;
-    this.status = 400;
+    // Most egress rejections are caller errors (bad/blocked URL) → 400. Size-cap
+    // violations are 413 so the API matches the documented `413 file_too_large`.
+    this.status = status;
   }
 }
 
@@ -150,7 +152,9 @@ let _guardedAgent = null;
  */
 export function guardedAgent() {
   if (privateEgressAllowed()) return undefined;
-  if (!_guardedAgent) _guardedAgent = new Agent({ connect: guardedConnect });
+  // Cap per-origin connections so a burst of webhook/media requests can't open an
+  // unbounded number of sockets to one host.
+  if (!_guardedAgent) _guardedAgent = new Agent({ connect: guardedConnect, connections: 64 });
   return _guardedAgent;
 }
 
@@ -187,7 +191,7 @@ export async function safeFetchToBuffer(rawUrl, { maxBytes }) {
     const declared = Number(headers['content-length']);
     if (Number.isFinite(declared) && declared > maxBytes) {
       try { await body.dump(); } catch { /* ignore */ }
-      throw new EgressError('file_too_large', `media exceeds ${maxBytes} bytes`);
+      throw new EgressError('file_too_large', `media exceeds ${maxBytes} bytes`, 413);
     }
 
     const chunks = [];
@@ -196,7 +200,7 @@ export async function safeFetchToBuffer(rawUrl, { maxBytes }) {
       total += chunk.length;
       if (total > maxBytes) {
         try { body.destroy(); } catch { /* ignore */ }
-        throw new EgressError('file_too_large', `media exceeds ${maxBytes} bytes`);
+        throw new EgressError('file_too_large', `media exceeds ${maxBytes} bytes`, 413);
       }
       chunks.push(chunk);
     }

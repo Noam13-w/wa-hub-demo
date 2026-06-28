@@ -13,7 +13,64 @@
   the production tunnel always targets the real origin. Re-installs reuse the
   ports already in `.env`. Relocated ports are printed in the final summary.
 - Edge-case test suite for the port logic: `deploy/test/port-selection.test.sh`
-  (runs the shipping functions against a mocked `ss`; 28 assertions).
+  (runs the shipping functions against a mocked `ss`; now 32 assertions).
+- Runtime smoke test `deploy/test/app-smoke.test.mjs` (21 assertions) and
+  `npm test` / `npm run test:install` scripts.
+
+### Fixed — 20-agent audit remediation (8 High + 16 Medium, adversarially verified)
+
+Reliability / DoS:
+- **Auth now runs BEFORE body parsing.** Removed the global 20 MB JSON parser that
+  buffered every request (incl. unauthenticated ones) before auth/rate-limit. A
+  coarse flood guard runs first; bodies are parsed per-route — `256 kb` default,
+  `20 MB` only on the authenticated media routes. Added `httpServer`
+  `maxConnections` / `headersTimeout` / `requestTimeout` (slowloris guard).
+- **Bounded the send-pacing queue** (`SEND_QUEUE_MAX`, sheds 503 when full) and
+  moved media fetch/decode OUT of the queue's critical section (no more
+  head-of-line blocking of text sends behind a slow download).
+- **Bounded webhook delivery** — concurrency + backlog caps (`WEBHOOK_CONCURRENCY`,
+  `WEBHOOK_MAX_QUEUE`), a connection cap on the guarded undici agent, and a
+  monotonic `seq` in the signed envelope + `x-hub-sequence` header so receivers can
+  order events / detect gaps.
+
+WhatsApp connection robustness:
+- **No more process crash from a WebSocket client** — the per-socket `error`
+  handler is now attached before any rejection path (a frame during a rejected
+  socket's close window no longer becomes an `uncaughtException`).
+- **Re-entrancy-safe Baileys boot** — concurrent `startSocket()` calls coalesce, and
+  `resetAuth()` detaches the old socket before wiping the auth dir (no dual sessions
+  / no creds re-written into a dir being deleted).
+- **Backoff actually escalates** on a flapping link (stopped resetting the counter
+  on every `open`; the 30 s stability timer is the sole resetter).
+- **Atomic creds persistence** — new `src/baileys/authState.js` writes via
+  temp-file + `rename`, keeps a `creds.json.bak`, and refuses to treat a corrupt
+  `creds.json` as "no creds" (a torn write no longer silently forces a re-pair).
+
+Security / correctness:
+- **Baileys + signal-key-store loggers are pinned to `warn`** for real (pino child
+  `level` is now passed as the options arg, not a binding) — no message-content /
+  key leakage at a `debug`/`trace` `LOG_LEVEL`.
+- **Group/admin ops, presence and markRead now go through the anti-ban serializer**
+  (were bypassing it); all delayed sends re-check the socket and return 503 (not a
+  500) if it dropped after the connect check.
+- Oversized media-by-URL now returns **413 `file_too_large`** (was 400), matching
+  the docs; `openapi.yaml` + `docs/API.md` corrected.
+
+Deploy:
+- `install.sh` SSH hardening writes a winning `sshd_config.d/00-*` drop-in and
+  verifies the **effective** `PasswordAuthentication` (the old main-file edit
+  silently lost to cloud-init's drop-in on Ubuntu cloud images).
+- The seccomp `syscall-fix.conf` (empty `SystemCallFilter=`) is no longer written
+  when the opt-in `hardening.conf` is present — it used to wipe that drop-in's
+  filter via drop-in ordering.
+- Re-installer env reads are `|| true`-guarded so a re-run over an old `.env`
+  can't abort under `set -euo pipefail`.
+
+### Docs
+
+- `openapi.yaml` (+16 operations) and `docs/API.md` (+17) now document the full
+  group-management surface, presence, WA health, and smoke-test routes; fixed a
+  pre-existing YAML parse error in `openapi.yaml`.
 
 ## 0.2.0 — security hardening (external grey-box pentest remediation)
 

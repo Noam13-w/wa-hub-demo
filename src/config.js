@@ -84,6 +84,16 @@ const schema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   SEND_TYPING_MS_PER_CHAR: z.coerce.number().int().nonnegative().default(60),
   SEND_TYPING_MAX_MS: z.coerce.number().int().positive().default(8000),
+  // Max tasks queued in the outbound send/pacing FIFO before new sends are shed
+  // with a 503. Bounds memory (each queued media send retains its decoded bytes)
+  // and stops a flood from growing the chain without limit when pacing is on.
+  SEND_QUEUE_MAX: z.coerce.number().int().positive().default(500),
+  // ─── Webhook delivery bounds ───────────────────────────────────────────
+  // Cap concurrent in-flight webhook POSTs and the backlog behind them, so a slow
+  // or failing receiver during an inbound burst can't accumulate unbounded retained
+  // bodies / retry timers / sockets. Past the backlog cap, deliveries are shed.
+  WEBHOOK_CONCURRENCY: z.coerce.number().int().positive().default(10),
+  WEBHOOK_MAX_QUEUE: z.coerce.number().int().positive().default(1000),
 }).refine((c) => c.HUB_PORT !== c.WS_PORT, {
   message: 'HUB_PORT and WS_PORT must be different',
   path: ['WS_PORT'],
