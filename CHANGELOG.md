@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Automatic port selection in the installer.** `deploy/install.sh` now probes
+  the default ports before writing `.env`: if `3060` (REST) or `3061` (WS) is
+  already held by another listener, it walks upward to the next free port instead
+  of writing a config the Hub would crash-loop on (`EADDRINUSE`). The chosen
+  `HUB_PORT` is propagated into the Cloudflare Tunnel `--url`, and
+  `deploy/cloudflared-setup.sh` (quick + named) reads `HUB_PORT` from `.env` so
+  the production tunnel always targets the real origin. Re-installs reuse the
+  ports already in `.env`. Relocated ports are printed in the final summary.
+- Edge-case test suite for the port logic: `deploy/test/port-selection.test.sh`
+  (runs the shipping functions against a mocked `ss`; 28 assertions).
+
 ## 0.2.0 — security hardening (external grey-box pentest remediation)
 
 Remediation of an authorized 10-surface grey-box penetration test. Closes the

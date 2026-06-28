@@ -41,6 +41,33 @@ fail()  { echo -e "  ${RED}✗${RESET} $*"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 
+# ─── Port selection — never clash with services already on the box ───────────
+# wa-hub binds loopback only, but a box that already runs other services may
+# already hold our default ports (3060/3061). If we wrote them blindly the Hub
+# would crash-loop on EADDRINUSE. So we PROBE each desired port and, if it's
+# taken, walk upward to the next free one — keeping a re-install on a busy box
+# self-healing. The chosen ports flow into .env AND into the tunnel's --url.
+port_in_use() {
+  # True if anything is LISTENING on this TCP port, on ANY local address. ss is
+  # already a dependency (used by looks_fresh). We take the Local Address column
+  # ($4), strip everything up to the last ':' to isolate the port, and match it
+  # EXACTLY — so port 60 is not flagged by a listener on 3060, nor 3060 by 13060.
+  local p="$1"
+  ss -ltnH 2>/dev/null | awk '{print $4}' | sed 's/.*://' | grep -qx "$p"
+}
+pick_free_port() {
+  # $1 = preferred port; any further args = ports already claimed in THIS run
+  # (so HUB and WS never land on the same number). Echoes the first free port
+  # at or above the preferred one.
+  local p="$1"; shift
+  local claimed=" $* "
+  while port_in_use "$p" || [[ "$claimed" == *" $p "* ]]; do
+    p=$((p + 1))
+    [[ "$p" -le 65535 ]] || fail "no free TCP port available at or above $1"
+  done
+  printf '%s\n' "$p"
+}
+
 # ─── Hardening mode — protect EXISTING servers ───────────────────────────────
 # This installer was built for a FRESH, dedicated box, where it hardens the host
 # (resets ufw to deny-all-but-SSH, disables SSH password auth, dist-upgrades).
@@ -183,15 +210,25 @@ if [[ -f "$ENV_FILE" ]]; then
   warn ".env already exists — keeping existing secrets"
   HUB_TOKEN=$(grep ^HUB_TOKEN "$ENV_FILE" | cut -d= -f2-)
   WEBHOOK_SECRET=$(grep ^WEBHOOK_SECRET "$ENV_FILE" | cut -d= -f2-)
+  # Reuse the ports already committed to .env so the tunnel below points at the
+  # right origin (fall back to the defaults if an old .env predates these keys).
+  HUB_PORT=$(grep ^HUB_PORT "$ENV_FILE" | cut -d= -f2-); HUB_PORT="${HUB_PORT:-3060}"
+  WS_PORT=$(grep ^WS_PORT "$ENV_FILE" | cut -d= -f2-);   WS_PORT="${WS_PORT:-3061}"
 else
   HUB_TOKEN=$(openssl rand -hex 32)
   WEBHOOK_SECRET=$(openssl rand -hex 32)
+  # Pick free ports up front — defaults first, next-free if they're already held.
+  HUB_PORT=$(pick_free_port 3060)
+  WS_PORT=$(pick_free_port 3061 "$HUB_PORT")
+  if [[ "$HUB_PORT" != "3060" || "$WS_PORT" != "3061" ]]; then
+    warn "default ports were busy — using HUB_PORT=$HUB_PORT, WS_PORT=$WS_PORT"
+  fi
   cat >"$ENV_FILE" <<EOF
 HUB_NAME=$(hostname -s)
 HUB_TOKEN=$HUB_TOKEN
 WEBHOOK_SECRET=$WEBHOOK_SECRET
-HUB_PORT=3060
-WS_PORT=3061
+HUB_PORT=$HUB_PORT
+WS_PORT=$WS_PORT
 # Bound to loopback — only the local Cloudflare Tunnel reaches the API/WS.
 HUB_HOST=127.0.0.1
 WS_HOST=127.0.0.1
@@ -236,6 +273,9 @@ ok "cloudflared $(cloudflared --version | head -1 | awk '{print $3}')"
 
 # Pull the cloudflared systemd unit from the repo (no heredoc — robust against paste mangling).
 install -m 644 "$INSTALL_DIR/deploy/cloudflared-wahub.service" /etc/systemd/system/cloudflared-wahub.service
+# Point the tunnel at the API's ACTUAL port. The unit ships with the 3060 default;
+# if the Hub was relocated above (busy port) this rewrites it to match. No-op at 3060.
+sed -i "s#http://127.0.0.1:3060#http://127.0.0.1:$HUB_PORT#" /etc/systemd/system/cloudflared-wahub.service
 systemctl daemon-reload
 systemctl enable --now cloudflared-wahub.service >/dev/null
 
@@ -294,6 +334,10 @@ echo
 echo -e "${BOLD}Public URL:${RESET}        ${CYAN}${TUNNEL_URL:-(check in a moment)}${RESET}$( [[ -n "$TUNNEL_URL" && "$TUNNEL_OK" == "1" ]] && echo -e "  ${GREEN}✓ live${RESET}" )"
 [[ -n "$TUNNEL_URL" && "$TUNNEL_OK" != "1" ]] && \
   echo -e "                   ${YELLOW}↳ not reachable yet — give it ~30s and reload; if it stays down see 'Tunnel logs' below${RESET}"
+# Surface the ports only when they were relocated off the defaults, so an operator
+# who probes 127.0.0.1:3060 by habit isn't confused when nothing answers there.
+[[ "$HUB_PORT" != "3060" || "$WS_PORT" != "3061" ]] && \
+  echo -e "${BOLD}Local ports:${RESET}       ${CYAN}REST :$HUB_PORT · WS :$WS_PORT${RESET}  ${YELLOW}(defaults were busy)${RESET}"
 # Only echo raw secrets to an interactive terminal. When the installer is piped
 # (curl ... | bash) stdout is not a TTY, and printing would leak them into the
 # pipe / CI logs / scrollback — so we point to the 0600 .env instead.

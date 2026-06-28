@@ -23,6 +23,16 @@ fail() { echo -e "  ${RED}✗${RESET} $*"; exit 1; }
 
 [[ $EUID -eq 0 ]] || fail "Run as root (use sudo)."
 
+# ─── 0. Where does the Hub actually listen? ───────────────────────────
+# The installer may have relocated the Hub off 3060 if that port was busy, so we
+# read the real HUB_PORT from .env rather than assume 3060. Fall back to 3060.
+ENV_FILE="${WA_HUB_ENV:-/srv/wa-hub-demo/.env}"
+HUB_PORT=3060
+if [[ -f "$ENV_FILE" ]]; then
+  _p="$(grep -E '^HUB_PORT=' "$ENV_FILE" | cut -d= -f2- || true)"
+  [[ "$_p" =~ ^[0-9]+$ ]] && HUB_PORT="$_p"
+fi
+
 # ─── 1. Install cloudflared ───────────────────────────────────────────
 step "Installing cloudflared"
 if ! command -v cloudflared >/dev/null; then
@@ -51,7 +61,7 @@ fi
 # ─── 3a. Quick tunnel ─────────────────────────────────────────────────
 if [[ "$MODE" == "quick" ]]; then
   step "Starting QUICK tunnel (random URL)"
-  cat >/etc/systemd/system/cloudflared-quick.service <<'EOF'
+  cat >/etc/systemd/system/cloudflared-quick.service <<EOF
 [Unit]
 Description=Cloudflare Quick Tunnel for wa-hub-demo
 After=network-online.target wa-hub.service
@@ -59,7 +69,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:3060
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$HUB_PORT
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -114,7 +124,7 @@ credentials-file: /etc/cloudflared/$TUNNEL_ID.json
 protocol: http2
 ingress:
   - hostname: $HOSTNAME
-    service: http://127.0.0.1:3060
+    service: http://127.0.0.1:$HUB_PORT
   - service: http_status:404
 EOF
 
